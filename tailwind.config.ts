@@ -52,16 +52,26 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
-				sidebar: {
-					DEFAULT: 'hsl(var(--sidebar-background))',
-					foreground: 'hsl(var(--sidebar-foreground))',
-					primary: 'hsl(var(--sidebar-primary))',
-					'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
-					accent: 'hsl(var(--sidebar-accent))',
-					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
-					border: 'hsl(var(--sidebar-border))',
-					ring: 'hsl(var(--sidebar-ring))'
+				gaming: {
+					gold: 'hsl(var(--gaming-gold))',
+					success: 'hsl(var(--gaming-success))',
+					warning: 'hsl(var(--gaming-warning))'
 				}
+			},
+			backgroundImage: {
+				'gradient-primary': 'var(--gradient-primary)',
+				'gradient-card': 'var(--gradient-card)',
+				'gradient-hero': 'var(--gradient-hero)'
+			},
+			boxShadow: {
+				'card': 'var(--shadow-card)',
+				'card-hover': 'var(--shadow-card-hover)',
+				'glow-primary': 'var(--glow-primary)',
+				'glow-accent': 'var(--glow-accent)'
+			},
+			transitionTimingFunction: {
+				'smooth': 'var(--transition-smooth)',
+				'bounce': 'var(--transition-bounce)'
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
