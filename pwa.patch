@@ -1,0 +1,83 @@
+*** Begin Patch
+*** Add File: public/manifest.webmanifest
++{
++  "name": "Game Vault Advisor",
++  "short_name": "GameVault",
++  "start_url": "/",
++  "scope": "/",
++  "display": "standalone",
++  "background_color": "#0b1020",
++  "theme_color": "#6d5efc",
++  "icons": [
++    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
++    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
++  ]
++}
++
+*** End Patch
+*** Begin Patch
+*** Add File: public/sw.js
++const CACHE_NAME = "game-vault-v1";
++const OFFLINE_URLS = ["/", "/index.html"];
++
++self.addEventListener("install", (event) => {
++  self.skipWaiting();
++  event.waitUntil(
++    caches.open(CACHE_NAME).then((cache) => cache.addAll(OFFLINE_URLS).catch(() => {}))
++  );
++});
++
++self.addEventListener("activate", (event) => {
++  event.waitUntil(
++    caches.keys().then((keys) =>
++      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
++    )
++  );
++  self.clients.claim();
++});
++
++self.addEventListener("fetch", (event) => {
++  if (event.request.method !== "GET") return;
++  event.respondWith(
++    caches.match(event.request).then((cached) => {
++      if (cached) return cached;
++      return fetch(event.request)
++        .then((resp) => {
++          const copy = resp.clone();
++          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
++          return resp;
++        })
++        .catch(() => caches.match("/"));
++    })
++  );
++});
++
+*** End Patch
+*** Begin Patch
+*** Update File: index.html
+@@
+   <head>
+     <meta charset="UTF-8" />
+     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+     <title>Vite + React + TS</title>
++    <!-- PWA -->
++    <link rel="manifest" href="/manifest.webmanifest" />
++    <meta name="theme-color" content="#6d5efc" />
++    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+   </head>
+*** End Patch
+*** Begin Patch
+*** Update File: src/main.tsx
+@@
+   </React.StrictMode>,
+   document.getElementById('root')!,
+ )
++
++// Register Service Worker for PWA
++if ('serviceWorker' in navigator) {
++  window.addEventListener('load', () => {
++    navigator.serviceWorker.register('/sw.js').catch(console.error);
++  });
++}
+*** End Patch
