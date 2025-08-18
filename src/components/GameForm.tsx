@@ -182,6 +182,7 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                 <CoverPicker
                   initialQuery={formData.title}
                   onSelect={(url) => setFormData(prev => ({ ...prev, coverUrl: url }))}
+                  apiKey={import.meta.env.VITE_SGDB_KEY}
                   onClose={() => { /* ici pas de modale à fermer, on est dans un onglet */ }}
                 />
               </TabsContent>
