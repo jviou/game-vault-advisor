@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { X, Upload, Star, Image } from "lucide-react";
+import React, { useState, useRef } from "react";
+import { X, Upload, Star, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Game, DEFAULT_GENRES } from "@/types/game";
-import { CoverPicker } from "@/components/CoverPicker";
+import CoverPicker from "@/components/CoverPicker";
 
 interface GameFormProps {
   game?: Game | null;
@@ -17,7 +17,7 @@ interface GameFormProps {
 
 export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const [formData, setFormData] = useState({
     title: game?.title || "",
     coverUrl: game?.coverUrl || "",
@@ -137,7 +137,7 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                 </Button>
               </div>
             )}
-            
+
             <Tabs defaultValue="manual" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="manual" className="flex items-center gap-2">
@@ -145,11 +145,12 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                   Manuel
                 </TabsTrigger>
                 <TabsTrigger value="search" className="flex items-center gap-2">
-                  <Image className="h-4 w-4" />
+                  <ImageIcon className="h-4 w-4" />
                   SteamGridDB
                 </TabsTrigger>
               </TabsList>
-              
+
+              {/* Mode manuel : URL ou upload */}
               <TabsContent value="manual" className="space-y-3">
                 <div className="flex gap-2">
                   <Input
@@ -165,7 +166,7 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                     <Upload className="h-4 w-4" />
                   </Button>
                 </div>
-                
+
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -174,12 +175,14 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                   className="hidden"
                 />
               </TabsContent>
-              
+
+              {/* Mode recherche : SteamGridDB */}
               <TabsContent value="search" className="space-y-3">
+                {/* Le CoverPicker s'occupe d'appeler l'API SGDB (clé en .env local) */}
                 <CoverPicker
-                  gameTitle={formData.title}
-                  onCoverSelect={(url) => setFormData(prev => ({ ...prev, coverUrl: url }))}
-                  apiKey={process.env.STEAMGRIDDB_API_KEY}
+                  initialQuery={formData.title}
+                  onSelect={(url) => setFormData(prev => ({ ...prev, coverUrl: url }))}
+                  onClose={() => { /* ici pas de modale à fermer, on est dans un onglet */ }}
                 />
               </TabsContent>
             </Tabs>
@@ -199,8 +202,8 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
               >
                 <Star
                   className={`w-8 h-8 ${
-                    i < formData.rating 
-                      ? "fill-gaming-gold text-gaming-gold" 
+                    i < formData.rating
+                      ? "fill-gaming-gold text-gaming-gold"
                       : "text-muted-foreground hover:text-gaming-gold"
                   }`}
                 />
@@ -212,7 +215,7 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
         {/* Genres */}
         <div className="space-y-3">
           <Label>Genres</Label>
-          
+
           {/* Selected genres */}
           {formData.genres.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -250,7 +253,7 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
               placeholder="Genre personnalisé"
               value={customGenre}
               onChange={(e) => setCustomGenre(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomGenre())}
+              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomGenre())}
             />
             <Button
               type="button"
@@ -286,7 +289,7 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
               placeholder="PS5, PC, Switch..."
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="finishedAt">Date de fin</Label>
             <Input
