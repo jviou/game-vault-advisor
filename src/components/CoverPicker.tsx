@@ -1,43 +1,52 @@
 // src/components/CoverPicker.tsx
 import React, { useState } from "react";
-import { sgdbSearchGames, sgdbGetGrids } from "../lib/steamgriddb";
+
+const RAWG_BASE = "https://api.rawg.io/api";
+const RAWG_KEY = (import.meta as any).env?.VITE_RAWG_KEY as string | undefined;
 
 type Props = {
   initialQuery?: string;
   onSelect: (url: string) => void;
   onClose?: () => void;
-  apiKey?: string; // optionnel : override manuel de la clé
 };
 
-export function CoverPicker({ initialQuery = "", onSelect, onClose, apiKey }: Props) {
+export function CoverPicker({ initialQuery = "", onSelect, onClose }: Props) {
   const [q, setQ] = useState(initialQuery);
   const [loading, setLoading] = useState(false);
   const [thumbs, setThumbs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const envKey = (import.meta as any).env?.VITE_SGDB_KEY as string | undefined;
-  const effectiveKey = apiKey || envKey;
-
   async function search() {
     setError(null);
+    setThumbs([]);
+    if (!q.trim()) return;
+
+    if (!RAWG_KEY) {
+      setError("Clé RAWG manquante : ajoute VITE_RAWG_KEY dans .env.local");
+      return;
+    }
+
     setLoading(true);
     try {
-      if (!effectiveKey) {
-        throw new Error("Clé API SteamGridDB non configurée (VITE_SGDB_KEY).");
+      const u = new URL(`${RAWG_BASE}/games`);
+      u.searchParams.set("key", RAWG_KEY);
+      u.searchParams.set("search", q);
+      u.searchParams.set("page_size", "12");
+
+      const res = await fetch(u.toString());
+      if (!res.ok) throw new Error(`RAWG HTTP ${res.status}`);
+      const data = await res.json();
+
+      const urls: string[] = (data?.results ?? [])
+        .map((g: any) => g.background_image)
+        .filter(Boolean);
+
+      if (!urls.length) {
+        setError("Aucune image trouvée pour ce titre.");
       }
-      const games = await sgdbSearchGames(q, effectiveKey);
-      if (games.length) {
-        const grids = await sgdbGetGrids(games[0].id, effectiveKey);
-        const urls = (grids || []).map((g: any) => g.url).slice(0, 12);
-        setThumbs(urls);
-        if (!urls.length) setError("Aucune jaquette trouvée pour ce jeu.");
-      } else {
-        setError("Jeu introuvable sur SteamGridDB.");
-        setThumbs([]);
-      }
+      setThumbs(urls);
     } catch (e: any) {
-      setError(e?.message || "Erreur de recherche");
-      setThumbs([]);
+      setError(e?.message || "Erreur pendant la recherche RAWG");
     } finally {
       setLoading(false);
     }
@@ -45,9 +54,9 @@ export function CoverPicker({ initialQuery = "", onSelect, onClose, apiKey }: Pr
 
   return (
     <div className="space-y-3">
-      {!effectiveKey && (
+      {!RAWG_KEY && (
         <div className="rounded-lg bg-amber-500/10 border border-amber-500/40 text-amber-200 p-3 text-sm">
-          Clé API absente. Ajoute <code>VITE_SGDB_KEY</code> dans <code>.env.local</code>.
+          Ajoute <code>VITE_RAWG_KEY</code> dans <code>.env.local</code> pour activer la recherche.
         </div>
       )}
 
