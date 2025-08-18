@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Game, DEFAULT_GENRES } from "@/types/game";
-import CoverPicker from "@/components/CoverPicker";
+import { CoverPicker } from "@/components/CoverPicker";
 
 interface GameFormProps {
   game?: Game | null;
