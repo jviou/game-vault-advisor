@@ -1,196 +1,91 @@
-import { useState, useEffect } from "react";
-import { Search, Download, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { SteamGridDBClient, SGDBGame, SGDBGrid } from "@/lib/steamgriddb";
-import { toast } from "@/hooks/use-toast";
+// src/components/CoverPicker.tsx
+import React, { useState } from "react";
+import { sgdbSearchGames, sgdbGetGrids } from "../lib/steamgriddb";
 
-interface CoverPickerProps {
-  gameTitle: string;
-  onCoverSelect: (url: string) => void;
-  apiKey?: string;
-}
+type Props = {
+  initialQuery?: string;
+  onSelect: (url: string) => void;
+  onClose?: () => void;
+  apiKey?: string; // optionnel : override manuel de la clé
+};
 
-export const CoverPicker = ({ gameTitle, onCoverSelect, apiKey }: CoverPickerProps) => {
-  const [searchQuery, setSearchQuery] = useState(gameTitle);
-  const [games, setGames] = useState<SGDBGame[]>([]);
-  const [selectedGame, setSelectedGame] = useState<SGDBGame | null>(null);
-  const [grids, setGrids] = useState<SGDBGrid[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [isLoadingGrids, setIsLoadingGrids] = useState(false);
+export function CoverPicker({ initialQuery = "", onSelect, onClose, apiKey }: Props) {
+  const [q, setQ] = useState(initialQuery);
+  const [loading, setLoading] = useState(false);
+  const [thumbs, setThumbs] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (gameTitle && gameTitle !== searchQuery) {
-      setSearchQuery(gameTitle);
-    }
-  }, [gameTitle]);
+  const envKey = (import.meta as any).env?.VITE_SGDB_KEY as string | undefined;
+  const effectiveKey = apiKey || envKey;
 
-  const searchGames = async () => {
-    if (!apiKey || !searchQuery.trim()) {
-      toast({
-        title: "Erreur",
-        description: "Clé API manquante ou recherche vide",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSearching(true);
+  async function search() {
+    setError(null);
+    setLoading(true);
     try {
-      const client = new SteamGridDBClient(apiKey);
-      const results = await client.searchGames(searchQuery);
-      setGames(results);
-      
-      if (results.length === 0) {
-        toast({
-          title: "Aucun résultat",
-          description: "Aucun jeu trouvé pour cette recherche",
-        });
+      if (!effectiveKey) {
+        throw new Error("Clé API SteamGridDB non configurée (VITE_SGDB_KEY).");
       }
-    } catch (error) {
-      toast({
-        title: "Erreur de recherche",
-        description: "Impossible de rechercher les jeux",
-        variant: "destructive",
-      });
+      const games = await sgdbSearchGames(q, effectiveKey);
+      if (games.length) {
+        const grids = await sgdbGetGrids(games[0].id, effectiveKey);
+        const urls = (grids || []).map((g: any) => g.url).slice(0, 12);
+        setThumbs(urls);
+        if (!urls.length) setError("Aucune jaquette trouvée pour ce jeu.");
+      } else {
+        setError("Jeu introuvable sur SteamGridDB.");
+        setThumbs([]);
+      }
+    } catch (e: any) {
+      setError(e?.message || "Erreur de recherche");
+      setThumbs([]);
     } finally {
-      setIsSearching(false);
+      setLoading(false);
     }
-  };
-
-  const loadGrids = async (game: SGDBGame) => {
-    if (!apiKey) return;
-
-    setSelectedGame(game);
-    setIsLoadingGrids(true);
-    
-    try {
-      const client = new SteamGridDBClient(apiKey);
-      const gameGrids = await client.getGameGrids(game.id);
-      setGrids(gameGrids);
-    } catch (error) {
-      toast({
-        title: "Erreur",
-        description: "Impossible de charger les jaquettes",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingGrids(false);
-    }
-  };
-
-  const handleCoverSelect = (grid: SGDBGrid) => {
-    onCoverSelect(grid.url);
-    toast({
-      title: "Jaquette sélectionnée",
-      description: "La jaquette a été ajoutée avec succès",
-    });
-  };
-
-  if (!apiKey) {
-    return (
-      <div className="text-center p-4 text-muted-foreground">
-        <p>Clé API SteamGridDB non configurée</p>
-        <p className="text-sm">Contactez l'administrateur pour activer cette fonctionnalité</p>
-      </div>
-    );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Search */}
+    <div className="space-y-3">
+      {!effectiveKey && (
+        <div className="rounded-lg bg-amber-500/10 border border-amber-500/40 text-amber-200 p-3 text-sm">
+          Clé API absente. Ajoute <code>VITE_SGDB_KEY</code> dans <code>.env.local</code>.
+        </div>
+      )}
+
       <div className="flex gap-2">
-        <Input
-          placeholder="Rechercher un jeu..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && searchGames()}
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Rechercher un jeu…"
+          className="flex-1 px-3 py-2 rounded-lg bg-neutral-800 text-white"
         />
-        <Button 
-          onClick={searchGames} 
-          disabled={isSearching || !searchQuery.trim()}
-          size="sm"
+        <button
+          type="button"
+          onClick={search}
+          className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white"
         >
-          {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-        </Button>
+          Rechercher
+        </button>
+        {onClose && (
+          <button type="button" onClick={onClose} className="px-3 py-2 rounded-lg bg-neutral-700">
+            Fermer
+          </button>
+        )}
       </div>
 
-      {/* Games List */}
-      {games.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="font-medium text-sm">Jeux trouvés :</h4>
-          <div className="grid gap-2 max-h-32 overflow-y-auto">
-            {games.map((game) => (
-              <Card
-                key={game.id}
-                className={`p-3 cursor-pointer transition-colors hover:bg-accent ${
-                  selectedGame?.id === game.id ? 'bg-accent border-primary' : ''
-                }`}
-                onClick={() => loadGrids(game)}
-              >
-                <div className="flex justify-between items-center">
-                  <span className="font-medium text-sm">{game.name}</span>
-                  {game.release_date && (
-                    <Badge variant="outline" className="text-xs">
-                      {new Date(game.release_date).getFullYear()}
-                    </Badge>
-                  )}
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
+      {loading && <p className="opacity-80">Recherche en cours…</p>}
+      {error && <p className="text-red-400">{error}</p>}
 
-      {/* Loading Grids */}
-      {isLoadingGrids && (
-        <div className="flex items-center justify-center p-8">
-          <Loader2 className="h-6 w-6 animate-spin" />
-          <span className="ml-2">Chargement des jaquettes...</span>
-        </div>
-      )}
-
-      {/* Grids Gallery */}
-      {grids.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="font-medium text-sm">
-            Jaquettes pour "{selectedGame?.name}" :
-          </h4>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-96 overflow-y-auto">
-            {grids.map((grid) => (
-              <Card
-                key={grid.id}
-                className="relative overflow-hidden cursor-pointer group hover:shadow-lg transition-shadow"
-                onClick={() => handleCoverSelect(grid)}
-              >
-                <div className="aspect-[3/4] relative">
-                  <img
-                    src={grid.thumb}
-                    alt={`Jaquette ${grid.id}`}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                    <Download className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </div>
-                </div>
-                <div className="p-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-muted-foreground">
-                      {grid.width}×{grid.height}
-                    </span>
-                    <Badge variant="outline" className="text-xs">
-                      ⭐ {grid.score}
-                    </Badge>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="grid grid-cols-3 md:grid-cols-4 gap-3 max-h-[50vh] overflow-auto">
+        {thumbs.map((u) => (
+          <button key={u} onClick={() => onSelect(u)} className="group">
+            <img
+              src={u}
+              alt=""
+              className="rounded-xl w-full aspect-[2/3] object-cover ring-1 ring-white/10 group-hover:ring-indigo-400"
+            />
+          </button>
+        ))}
+      </div>
     </div>
   );
-};
+}
