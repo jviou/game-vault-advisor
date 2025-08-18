@@ -1,11 +1,13 @@
 import { useState, useRef } from "react";
-import { X, Upload, Star } from "lucide-react";
+import { X, Upload, Star, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Game, DEFAULT_GENRES } from "@/types/game";
+import { CoverPicker } from "@/components/CoverPicker";
 
 interface GameFormProps {
   game?: Game | null;
@@ -136,28 +138,51 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
               </div>
             )}
             
-            <div className="flex gap-2">
-              <Input
-                placeholder="URL de l'image"
-                value={formData.coverUrl}
-                onChange={(e) => setFormData(prev => ({ ...prev, coverUrl: e.target.value }))}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="h-4 w-4" />
-              </Button>
-            </div>
-            
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-            />
+            <Tabs defaultValue="manual" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="manual" className="flex items-center gap-2">
+                  <Upload className="h-4 w-4" />
+                  Manuel
+                </TabsTrigger>
+                <TabsTrigger value="search" className="flex items-center gap-2">
+                  <Image className="h-4 w-4" />
+                  SteamGridDB
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="manual" className="space-y-3">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="URL de l'image"
+                    value={formData.coverUrl}
+                    onChange={(e) => setFormData(prev => ({ ...prev, coverUrl: e.target.value }))}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="h-4 w-4" />
+                  </Button>
+                </div>
+                
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+              </TabsContent>
+              
+              <TabsContent value="search" className="space-y-3">
+                <CoverPicker
+                  gameTitle={formData.title}
+                  onCoverSelect={(url) => setFormData(prev => ({ ...prev, coverUrl: url }))}
+                  apiKey={process.env.STEAMGRIDDB_API_KEY}
+                />
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
 
