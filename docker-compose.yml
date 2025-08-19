@@ -1,4 +1,5 @@
 version: "3.9"
+
 services:
   game-vault:
     build: .
@@ -6,4 +7,12 @@ services:
     container_name: game-vault
     restart: unless-stopped
     ports:
-      - "8099:80"   # http://<ip>:8080
+      - "8099:80"        # http://<ip>:8099
+
+  json-db:
+    image: clue/json-server
+    container_name: game-vault-db
+    volumes:
+      - /opt/game-vault-data/db.json:/data/db.json
+    command: /data/db.json
+    restart: unless-stopped
