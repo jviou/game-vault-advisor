@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { X, Upload, Star, Image as ImageIcon } from "lucide-react";
+import { X, Upload, Star, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,11 +7,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Game, DEFAULT_GENRES } from "@/types/game";
-import { CoverPicker } from "@/components/CoverPicker";
+import CoverPicker from "@/components/CoverPicker";
 
 interface GameFormProps {
   game?: Game | null;
-  onSave: (game: Omit<Game, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onSave: (game: Omit<Game, "id" | "createdAt" | "updatedAt">) => void;
   onCancel: () => void;
 }
 
@@ -25,7 +25,6 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
     genres: game?.genres || [],
     whyLiked: game?.whyLiked || "",
     platform: game?.platform || "",
-    finishedAt: game?.finishedAt ? game.finishedAt.split('T')[0] : "",
   });
 
   const [customGenre, setCustomGenre] = useState("");
@@ -35,39 +34,39 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
     if (file) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        setFormData(prev => ({ ...prev, coverUrl: e.target?.result as string }));
+        setFormData((prev) => ({ ...prev, coverUrl: e.target?.result as string }));
       };
       reader.readAsDataURL(file);
     }
   };
 
   const handleRatingClick = (rating: number) => {
-    setFormData(prev => ({ ...prev, rating }));
+    setFormData((prev) => ({ ...prev, rating }));
   };
 
   const toggleGenre = (genre: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       genres: prev.genres.includes(genre)
-        ? prev.genres.filter(g => g !== genre)
-        : [...prev.genres, genre]
+        ? prev.genres.filter((g) => g !== genre)
+        : [...prev.genres, genre],
     }));
   };
 
   const addCustomGenre = () => {
     if (customGenre.trim() && !formData.genres.includes(customGenre.trim())) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        genres: [...prev.genres, customGenre.trim()]
+        genres: [...prev.genres, customGenre.trim()],
       }));
       setCustomGenre("");
     }
   };
 
   const removeGenre = (genre: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      genres: prev.genres.filter(g => g !== genre)
+      genres: prev.genres.filter((g) => g !== genre),
     }));
   };
 
@@ -82,7 +81,6 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
       genres: formData.genres,
       whyLiked: formData.whyLiked.trim() || undefined,
       platform: formData.platform.trim() || undefined,
-      finishedAt: formData.finishedAt ? new Date(formData.finishedAt).toISOString() : undefined,
     });
   };
 
@@ -109,7 +107,9 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
           <Input
             id="title"
             value={formData.title}
-            onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+            onChange={(e) =>
+              setFormData((prev) => ({ ...prev, title: e.target.value }))
+            }
             placeholder="Nom du jeu"
             required
           />
@@ -131,7 +131,9 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                   variant="destructive"
                   size="sm"
                   className="absolute -top-2 -right-2 h-6 w-6 p-0"
-                  onClick={() => setFormData(prev => ({ ...prev, coverUrl: "" }))}
+                  onClick={() =>
+                    setFormData((prev) => ({ ...prev, coverUrl: "" }))
+                  }
                 >
                   <X className="h-3 w-3" />
                 </Button>
@@ -145,18 +147,22 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                   Manuel
                 </TabsTrigger>
                 <TabsTrigger value="search" className="flex items-center gap-2">
-                  <ImageIcon className="h-4 w-4" />
+                  <Image className="h-4 w-4" />
                   SteamGridDB
                 </TabsTrigger>
               </TabsList>
 
-              {/* Mode manuel : URL ou upload */}
               <TabsContent value="manual" className="space-y-3">
                 <div className="flex gap-2">
                   <Input
                     placeholder="URL de l'image"
                     value={formData.coverUrl}
-                    onChange={(e) => setFormData(prev => ({ ...prev, coverUrl: e.target.value }))}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        coverUrl: e.target.value,
+                      }))
+                    }
                   />
                   <Button
                     type="button"
@@ -176,14 +182,13 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                 />
               </TabsContent>
 
-              {/* Mode recherche : SteamGridDB */}
               <TabsContent value="search" className="space-y-3">
-                {/* Le CoverPicker s'occupe d'appeler l'API SGDB (clé en .env local) */}
                 <CoverPicker
-                  initialQuery={formData.title}
-                  onSelect={(url) => setFormData(prev => ({ ...prev, coverUrl: url }))}
-                  apiKey={import.meta.env.VITE_SGDB_KEY}
-                  onClose={() => { /* ici pas de modale à fermer, on est dans un onglet */ }}
+                  gameTitle={formData.title}
+                  onCoverSelect={(url) =>
+                    setFormData((prev) => ({ ...prev, coverUrl: url }))
+                  }
+                  apiKey={process.env.STEAMGRIDDB_API_KEY}
                 />
               </TabsContent>
             </Tabs>
@@ -236,7 +241,9 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
 
           {/* Default genres */}
           <div className="flex flex-wrap gap-2">
-            {DEFAULT_GENRES.filter(genre => !formData.genres.includes(genre)).map((genre) => (
+            {DEFAULT_GENRES.filter(
+              (genre) => !formData.genres.includes(genre)
+            ).map((genre) => (
               <Badge
                 key={genre}
                 variant="outline"
@@ -254,7 +261,9 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
               placeholder="Genre personnalisé"
               value={customGenre}
               onChange={(e) => setCustomGenre(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomGenre())}
+              onKeyPress={(e) =>
+                e.key === "Enter" && (e.preventDefault(), addCustomGenre())
+              }
             />
             <Button
               type="button"
@@ -273,33 +282,25 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
           <Textarea
             id="whyLiked"
             value={formData.whyLiked}
-            onChange={(e) => setFormData(prev => ({ ...prev, whyLiked: e.target.value }))}
+            onChange={(e) =>
+              setFormData((prev) => ({ ...prev, whyLiked: e.target.value }))
+            }
             placeholder="Ce qui m'a plu dans ce jeu..."
             rows={4}
           />
         </div>
 
-        {/* Platform & Date */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="platform">Plateforme</Label>
-            <Input
-              id="platform"
-              value={formData.platform}
-              onChange={(e) => setFormData(prev => ({ ...prev, platform: e.target.value }))}
-              placeholder="PS5, PC, Switch..."
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="finishedAt">Date de fin</Label>
-            <Input
-              id="finishedAt"
-              type="date"
-              value={formData.finishedAt}
-              onChange={(e) => setFormData(prev => ({ ...prev, finishedAt: e.target.value }))}
-            />
-          </div>
+        {/* Platform */}
+        <div className="space-y-2">
+          <Label htmlFor="platform">Plateforme</Label>
+          <Input
+            id="platform"
+            value={formData.platform}
+            onChange={(e) =>
+              setFormData((prev) => ({ ...prev, platform: e.target.value }))
+            }
+            placeholder="PS5, PC, Switch..."
+          />
         </div>
 
         {/* Actions */}
