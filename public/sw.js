@@ -1,4 +1,4 @@
-const CACHE_NAME = "game-vault-v1";
+const CACHE_NAME = "game-vault-v2";
 const OFFLINE_URLS = ["/", "/index.html"];
 
 self.addEventListener("install", (event) => {
