@@ -124,7 +124,7 @@ const Index = () => {
                 Ma Collection
               </h1>
               <p className="text-sm sm:text-base text-muted-foreground">
-                {games.length} jeu{games.length !== 1 ? "s" : ""}
+                {games.length} {games.length > 1 ? "jeux" : "jeu"}
               </p>
             </div>
           </div>
