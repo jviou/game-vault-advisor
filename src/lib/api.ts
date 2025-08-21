@@ -1,15 +1,19 @@
 // src/lib/api.ts
 export type GameDTO = {
-  id?: number; // géré par json-server
+  id: number;
   title: string;
   coverUrl?: string;
-  rating: number;         // 1..5
-  genres: string[];       // ["JRPG","Action"]
+  rating: number;
+  genres: string[];
   whyLiked?: string;
-  platform?: string;      // "PC", "PS5", ...
-  finishedAt?: string;    // ISO string
-  createdAt?: string;     // ISO string
-  updatedAt?: string;     // ISO string
+  platform?: string;
+
+  // NEW
+  saga?: string;
+
+  finishedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 const BASE = (import.meta as any).env?.VITE_API_BASE as string;
