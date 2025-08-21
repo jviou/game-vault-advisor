@@ -1,0 +1,17 @@
+# Dockerfile.sgdb
+FROM node:20-alpine
+
+WORKDIR /srv
+
+# Copie le manifeste et installe les deps
+COPY server/package.json ./
+RUN npm install --omit=dev
+
+# Copie le code
+COPY server/index.js ./
+
+# Variables (la clé est passée via compose/.env)
+ENV PORT=3000
+
+EXPOSE 3000
+CMD ["node", "index.js"]
