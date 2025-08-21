@@ -1,34 +1,33 @@
 // src/lib/steamgriddb.ts
 const SGDB_BASE = "https://www.steamgriddb.com/api/v2";
+const SGDB_KEY = import.meta.env.VITE_SGDB_KEY as string;
 
-function getKey(override?: string) {
-  const k = override || (import.meta as any).env?.VITE_SGDB_KEY;
-  if (!k) throw new Error("SGDB API key manquante (VITE_SGDB_KEY)");
-  return k as string;
+function authHeaders() {
+  if (!SGDB_KEY) {
+    throw new Error("VITE_SGDB_KEY manquante (config .env.local)");
+  }
+  return { Authorization: `Bearer ${SGDB_KEY}` };
 }
 
-// Recherche un jeu par titre (autocomplete)
-export async function sgdbSearchGames(query: string, apiKey?: string) {
-  const key = getKey(apiKey);
-  const res = await fetch(
-    `${SGDB_BASE}/search/autocomplete/${encodeURIComponent(query)}`,
-    { headers: { Authorization: `Bearer ${key}` } }
-  );
-  if (!res.ok) throw new Error(`SGDB search failed: ${res.status}`);
-  const data = await res.json(); // { data: [...] }
-  return data?.data ?? [];
+// Autocomplete par titre
+export async function sgdbSearchGames(query: string) {
+  const url = `${SGDB_BASE}/search/autocomplete/${encodeURIComponent(query)}`;
+  const res = await fetch(url, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`SGDB search ${res.status}`);
+  const json = await res.json(); // { data: [...] }
+  return (json?.data ?? []) as Array<{ id: number; name: string }>;
 }
 
-// Récupère des jaquettes (grids) pour un gameId SGDB
-export async function sgdbGetGrids(gameId: number, apiKey?: string) {
-  const key = getKey(apiKey);
+// Récupère les "grids" (jaquettes verticales) d’un jeu SGDB
+export async function sgdbGetGrids(gameId: number) {
   const url = new URL(`${SGDB_BASE}/grids/game/${gameId}`);
+  // formats “box art” verticaux classiques
   url.searchParams.set("dimensions", "600x900,342x482");
-  url.searchParams.set("types", "static");
-  url.searchParams.set("styles", "alternate");
+  url.searchParams.set("types", "static");      // pas de GIF
+  url.searchParams.set("styles", "alternate");  // variantes propres
 
-  const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${key}` } });
-  if (!res.ok) throw new Error(`SGDB grids failed: ${res.status}`);
-  const data = await res.json(); // { data: [...] }
-  return data?.data ?? [];
+  const res = await fetch(url.toString(), { headers: authHeaders() });
+  if (!res.ok) throw new Error(`SGDB grids ${res.status}`);
+  const json = await res.json(); // { data: [...] }
+  return (json?.data ?? []) as Array<{ url: string }>;
 }
