@@ -20,3 +20,17 @@ services:
       - /opt/game-vault-data/db.json:/data/db.json
     command: /data/db.json
     restart: unless-stopped
+
+  sgdb-proxy:
+    image: node:20-alpine
+    container_name: game-vault-sgdb
+    working_dir: /srv
+    environment:
+      - SGDB_KEY=${SGDB_KEY}
+      - PORT=3000
+    volumes:
+      - ./server:/srv:ro
+    command: [ "node", "index.js" ]
+    restart: unless-stopped
+    networks:
+      - app-net
