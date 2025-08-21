@@ -19,7 +19,7 @@ services:
     command: ["--host", "0.0.0.0", "/data/db.json"]
     restart: unless-stopped
 
-  sgdb-proxy:
+    sgdb-proxy:
     image: node:20-alpine
     container_name: game-vault-sgdb
     working_dir: /srv
@@ -27,6 +27,6 @@ services:
       - SGDB_KEY=${SGDB_KEY}
       - PORT=3000
     volumes:
-      - ./server:/srv:ro
-    command: ["node", "index.js"]
+      - ./server:/srv            # RW pour créer node_modules
+    command: ["sh", "-c", "npm install --omit=dev && node index.js"]
     restart: unless-stopped
