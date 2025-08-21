@@ -1,140 +1,157 @@
 // src/components/CoverPicker.tsx
-import React, { useEffect, useState } from "react";
-import { sgdbSearchGames, sgdbGetGrids } from "@/lib/steamgriddb";
+import React, { useEffect, useMemo, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Image as ImageIcon, Search } from "lucide-react";
 
-type Props = {
-  /** Titre initial (ex: le champ "Titre" du formulaire) */
-  initialQuery?: string;
-  /** Callback quand on choisit une jaquette */
-  onSelect: (url: string) => void;
-  /** Optionnel si tu veux fermer une modale parente */
-  onClose?: () => void;
-};
+type SgdbGame = { id: number; name: string };
+type SgdbGrid = { url: string };
 
-export function CoverPicker({ initialQuery = "", onSelect, onClose }: Props) {
-  const [q, setQ] = useState(initialQuery);
+interface CoverPickerProps {
+  gameTitle: string;
+  apiKey?: string; // non utilisé côté proxy, mais on garde la signature
+  onCoverSelect: (url: string) => void;
+}
+
+export const CoverPicker: React.FC<CoverPickerProps> = ({
+  gameTitle,
+  onCoverSelect,
+}) => {
+  const [query, setQuery] = useState(gameTitle || "");
   const [loading, setLoading] = useState(false);
+  const [games, setGames] = useState<SgdbGame[]>([]);
+  const [activeGameId, setActiveGameId] = useState<number | null>(null);
+  const [grids, setGrids] = useState<SgdbGrid[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [games, setGames] = useState<Array<{ id: number; name: string }>>([]);
-  const [selectedGame, setSelectedGame] = useState<number | null>(null);
-  const [thumbs, setThumbs] = useState<string[]>([]);
 
+  // maj champ si le titre change
   useEffect(() => {
-    // si le titre est pré-rempli, on peut pré-lancer
-    if (initialQuery && initialQuery.trim().length >= 2) {
-      void search(initialQuery);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (gameTitle && !query) setQuery(gameTitle);
+  }, [gameTitle]);
 
-  async function search(term: string) {
-    setError(null);
+  const canSearch = useMemo(() => query.trim().length >= 2, [query]);
+
+  const searchGames = async () => {
+    if (!canSearch) return;
     setLoading(true);
+    setError(null);
+    setGames([]);
+    setGrids([]);
+    setActiveGameId(null);
+
     try {
-      const results = await sgdbSearchGames(term);
-      setGames(results);
-      const first = results[0];
-      if (first) {
-        setSelectedGame(first.id);
-        const grids = await sgdbGetGrids(first.id);
-        setThumbs(grids.map((g) => g.url).slice(0, 24));
-        if (grids.length === 0) setError("Aucune jaquette pour ce jeu.");
-      } else {
-        setSelectedGame(null);
-        setThumbs([]);
-        setError("Aucun jeu trouvé.");
+      const res = await fetch(`/sgdb/search?query=${encodeURIComponent(query)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const data: SgdbGame[] = json?.data ?? [];
+      setGames(data);
+      // pré-sélection du 1er jeu
+      if (data.length > 0) {
+        pickGame(data[0].id);
       }
     } catch (e: any) {
-      setSelectedGame(null);
-      setThumbs([]);
-      setError(e?.message || "Erreur de recherche SGDB");
+      setError(e?.message || "Recherche impossible");
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  async function loadGrids(gameId: number) {
+  const pickGame = async (id: number) => {
+    setActiveGameId(id);
+    setGrids([]);
     setError(null);
-    setLoading(true);
     try {
-      setSelectedGame(gameId);
-      const grids = await sgdbGetGrids(gameId);
-      setThumbs(grids.map((g) => g.url).slice(0, 24));
-      if (grids.length === 0) setError("Aucune jaquette pour ce jeu.");
+      const res = await fetch(`/sgdb/grids?gameId=${id}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const data: SgdbGrid[] = json?.data ?? [];
+      setGrids(data);
     } catch (e: any) {
-      setThumbs([]);
-      setError(e?.message || "Erreur de chargement des jaquettes");
-    } finally {
-      setLoading(false);
+      setError(e?.message || "Chargement des jaquettes impossible");
     }
-  }
+  };
 
   return (
     <div className="space-y-3">
-      {/* Recherche */}
+      {/* barre de recherche */}
       <div className="flex gap-2">
-        <input
-          className="flex-1 px-3 py-2 rounded-lg bg-neutral-800 text-white outline-none"
-          placeholder="Rechercher un jeu…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && search(q)}
-        />
-        <button
-          onClick={() => search(q)}
-          className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white"
-        >
-          Rechercher
-        </button>
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Rechercher un jeu…"
+            className="pl-8"
+          />
+        </div>
+        <Button onClick={searchGames} disabled={!canSearch || loading}>
+          {loading ? "Recherche…" : "Rechercher"}
+        </Button>
       </div>
 
-      {/* Jeux trouvés */}
+      {/* suggestions de jeux */}
       {games.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {games.slice(0, 12).map((g) => (
-            <button
-              key={g.id}
-              onClick={() => loadGrids(g.id)}
-              className={`px-3 py-1 rounded-full text-sm border whitespace-nowrap ${
-                selectedGame === g.id
-                  ? "bg-indigo-600 text-white border-indigo-600"
-                  : "bg-transparent text-white border-white/20"
-              }`}
-              title={g.name}
-            >
-              {g.name}
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-2">
+          {games.slice(0, 12).map((g) => {
+            const isActive = g.id === activeGameId;
+            return (
+              <Badge
+                key={g.id}
+                onClick={() => pickGame(g.id)}
+                variant={isActive ? "default" : "secondary"}
+                className={`cursor-pointer transition ${
+                  isActive ? "ring-2 ring-primary" : "hover:bg-secondary/80"
+                }`}
+              >
+                {g.name}
+              </Badge>
+            );
+          })}
         </div>
       )}
 
-      {loading && <p className="opacity-80">Chargement…</p>}
-      {error && <p className="text-red-400">{error}</p>}
+      {/* messages d'état */}
+      {!!error && (
+        <p className="text-sm text-destructive">{String(error)}</p>
+      )}
+      {!loading && games.length === 0 && !error && (
+        <div className="text-xs text-muted-foreground flex items-center gap-2">
+          <ImageIcon className="h-4 w-4" />
+          Tape un nom de jeu et lance la recherche.
+        </div>
+      )}
 
-      {/* Grille de jaquettes */}
-      <div className="grid grid-cols-3 md:grid-cols-4 gap-3 max-h-[60vh] overflow-auto">
-        {thumbs.map((u) => (
-          <button
-            key={u}
-            onClick={() => {
-              onSelect(u);
-              onClose?.();
-            }}
-            className="group"
-            title="Choisir cette jaquette"
-          >
-            <img
-              src={u}
-              alt=""
-              loading="lazy"
-              className="rounded-xl w-full aspect-[2/3] object-cover ring-1 ring-white/10 group-hover:ring-indigo-400"
-            />
-          </button>
-        ))}
-      </div>
+      {/* grille des jaquettes (hauteur fixe, même taille) */}
+      {grids.length > 0 && (
+        <div className="max-h-[60vh] overflow-y-auto pr-0.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {grids.map((grid, idx) => (
+              <button
+                key={`${grid.url}-${idx}`}
+                type="button"
+                onClick={() => onCoverSelect(grid.url)}
+                className="group relative rounded-lg border bg-background hover:shadow-md transition focus:outline-none focus:ring-2 focus:ring-primary"
+                title="Choisir cette jaquette"
+              >
+                <div className="w-28 h-40 overflow-hidden rounded-md">
+                  <img
+                    src={grid.url}
+                    alt="cover"
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                </div>
+                <div className="absolute inset-0 rounded-lg ring-0 group-hover:ring-2 ring-primary/60 pointer-events-none" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
 
-// on expose aussi un default pour éviter tout souci d'import
 export default CoverPicker;
