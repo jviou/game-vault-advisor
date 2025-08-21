@@ -1,6 +1,6 @@
 // src/pages/Index.tsx
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Gamepad2 } from "lucide-react";
+import { Plus, Gamepad2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import GameCard from "@/components/GameCard";
@@ -109,26 +109,46 @@ const Index = () => {
   // Sagas (pour la datalist du formulaire)
   const availableSagas = useMemo(() => {
     return Array.from(
-      new Set(
-        games
-          .map((g) => (g.saga || "").trim())
-          .filter((s) => s.length > 0)
-      )
+      new Set(games.map((g) => g.saga?.trim()).filter(Boolean) as string[])
     ).sort();
   }, [games]);
 
-  // Regrouper les jeux filtrés par saga
+  // Groupes par saga
   const groups = useMemo(() => {
     if (!groupBySaga) return [["Tous les jeux", filteredGames] as const];
 
     const map = new Map<string, GameDTO[]>();
     for (const g of filteredGames) {
-      const key = (g.saga || "").trim() || "Jeux";
+      const key = g.saga?.trim() || "Jeux c'est où ?";
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(g);
     }
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [filteredGames, groupBySaga]);
+
+  // --- Export JSON de toute la collection ---
+  const handleExportAll = () => {
+    try {
+      const data = JSON.stringify(games, null, 2);
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const date = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `game-vault_${date}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Export JSON", description: "La collection a été exportée." });
+    } catch (e: any) {
+      toast({
+        title: "Export échoué",
+        description: e?.message || "Impossible d’exporter le JSON.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleSaveGame = async (
     gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
@@ -163,7 +183,6 @@ const Index = () => {
     setEditingGame(game);
     setIsFormOpen(true);
   };
-
   const handleDeleteGame = async (id: number) => {
     const game = games.find((g) => g.id === id);
     if (!confirm(`Supprimer “${game?.title ?? "ce jeu"}” ?`)) return;
@@ -183,7 +202,6 @@ const Index = () => {
       });
     }
   };
-
   const handleViewGame = (game: GameDTO) => setViewingGame(game);
 
   return (
@@ -205,16 +223,28 @@ const Index = () => {
             </div>
           </div>
 
-          <Button
-            onClick={() => {
-              setEditingGame(null);
-              setIsFormOpen(true);
-            }}
-            className="gap-2 shadow-glow-primary w-full sm:w-auto"
-          >
-            <Plus className="w-4 h-4" />
-            Ajouter
-          </Button>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button
+              variant="outline"
+              onClick={handleExportAll}
+              className="gap-2 w-full sm:w-auto"
+              title="Exporter toute la collection au format JSON"
+            >
+              <Download className="w-4 h-4" />
+              Exporter JSON
+            </Button>
+
+            <Button
+              onClick={() => {
+                setEditingGame(null);
+                setIsFormOpen(true);
+              }}
+              className="gap-2 shadow-glow-primary w-full sm:w-auto"
+            >
+              <Plus className="w-4 h-4" />
+              Ajouter
+            </Button>
+          </div>
         </div>
 
         {/* Search + Filtres */}
@@ -237,7 +267,7 @@ const Index = () => {
           />
         </div>
 
-        {/* Grille (groupée ou non) */}
+        {/* Grilles */}
         {groups.length === 0 || (groups.length === 1 && groups[0][1].length === 0) ? (
           <div className="text-center py-12">
             <h3 className="text-lg sm:text-xl font-semibold mb-2">
