@@ -16,7 +16,7 @@ interface GameFormProps {
   availableSagas?: string[];
 }
 
-export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
+export const GameForm = ({ game, onSave, onCancel, availableSagas = [], }: GameFormProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
