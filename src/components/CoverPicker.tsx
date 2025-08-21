@@ -1,5 +1,5 @@
 // src/components/CoverPicker.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ type SgdbGrid = { url: string };
 
 interface CoverPickerProps {
   gameTitle: string;
-  apiKey?: string; // non utilisé côté proxy, mais on garde la signature
+  apiKey?: string; // non utilisé côté proxy, signature conservée
   onCoverSelect: (url: string) => void;
 }
 
@@ -25,15 +25,20 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
   const [grids, setGrids] = useState<SgdbGrid[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // maj champ si le titre change
-  useEffect(() => {
-    if (gameTitle && !query) setQuery(gameTitle);
-  }, [gameTitle]);
-
+  // --- utils ---
   const canSearch = useMemo(() => query.trim().length >= 2, [query]);
+  const debounceRef = useRef<number | null>(null);
+  const clearDebounce = () => {
+    if (debounceRef.current) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  };
 
-  const searchGames = async () => {
-    if (!canSearch) return;
+  // Recherche jeux (accepte un terme explicite pour éviter décalage d'état)
+  const searchGames = async (term: string) => {
+    const q = term.trim();
+    if (q.length < 2) return;
     setLoading(true);
     setError(null);
     setGames([]);
@@ -41,7 +46,7 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
     setActiveGameId(null);
 
     try {
-      const res = await fetch(`/sgdb/search?query=${encodeURIComponent(query)}`, {
+      const res = await fetch(`/sgdb/search?query=${encodeURIComponent(q)}`, {
         cache: "no-store",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -50,7 +55,7 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
       setGames(data);
       // pré-sélection du 1er jeu
       if (data.length > 0) {
-        pickGame(data[0].id);
+        void pickGame(data[0].id);
       }
     } catch (e: any) {
       setError(e?.message || "Recherche impossible");
@@ -59,6 +64,7 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
     }
   };
 
+  // Charge les jaquettes pour un jeu
   const pickGame = async (id: number) => {
     setActiveGameId(id);
     setGrids([]);
@@ -74,6 +80,19 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
     }
   };
 
+  // Garde le champ en phase avec gameTitle et déclenche une recherche auto (debounce)
+  useEffect(() => {
+    const next = (gameTitle || "").trim();
+    setQuery(next);
+    clearDebounce();
+    if (next.length >= 2) {
+      debounceRef.current = window.setTimeout(() => searchGames(next), 350);
+    }
+    // cleanup
+    return clearDebounce;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameTitle]);
+
   return (
     <div className="space-y-3">
       {/* barre de recherche */}
@@ -87,7 +106,10 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
             className="pl-8"
           />
         </div>
-        <Button onClick={searchGames} disabled={!canSearch || loading}>
+        <Button
+          onClick={() => searchGames(query)}
+          disabled={!canSearch || loading}
+        >
           {loading ? "Recherche…" : "Rechercher"}
         </Button>
       </div>
@@ -113,27 +135,29 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
         </div>
       )}
 
-      {/* messages d'état */}
-      {!!error && (
-        <p className="text-sm text-destructive">{String(error)}</p>
-      )}
+      {/* messages */}
+      {!!error && <p className="text-sm text-destructive">{String(error)}</p>}
       {!loading && games.length === 0 && !error && (
         <div className="text-xs text-muted-foreground flex items-center gap-2">
           <ImageIcon className="h-4 w-4" />
-          Tape un nom de jeu et lance la recherche.
+          Tape un nom de jeu (ou utilise le titre) pour lancer la recherche.
         </div>
       )}
 
-      {/* grille des jaquettes (hauteur fixe, même taille) */}
+      {/* grille des jaquettes : tuiles taille fixe, clic fiabilisé */}
       {grids.length > 0 && (
         <div className="max-h-[60vh] overflow-y-auto pr-0.5">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {grids.map((grid, idx) => (
-              <button
+              <div
                 key={`${grid.url}-${idx}`}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => onCoverSelect(grid.url)}
-                className="group relative rounded-lg border bg-background hover:shadow-md transition focus:outline-none focus:ring-2 focus:ring-primary"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") onCoverSelect(grid.url);
+                }}
+                className="group relative rounded-lg border bg-background hover:shadow-md transition focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
                 title="Choisir cette jaquette"
               >
                 <div className="w-28 h-40 overflow-hidden rounded-md">
@@ -144,8 +168,7 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
                     loading="lazy"
                   />
                 </div>
-                <div className="absolute inset-0 rounded-lg ring-0 group-hover:ring-2 ring-primary/60 pointer-events-none" />
-              </button>
+              </div>
             ))}
           </div>
         </div>
