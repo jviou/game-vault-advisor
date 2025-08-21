@@ -186,10 +186,9 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
               {/* SteamGridDB */}
               <TabsContent value="search" className="space-y-3">
                 <CoverPicker
-                  initialQuery={formData.title}
-                  onSelect={(url) =>
-                    setFormData((prev) => ({ ...prev, coverUrl: url }))
-                  }
+                  gameTitle={formData.title}
+                  onTitlePick={(t) => setFormData(prev => ({ ...prev, title: t }))}   // <-- NOUVEAU
+                  onCoverSelect={(url) => setFormData(prev => ({ ...prev, coverUrl: url }))}
                 />
               </TabsContent>
             </Tabs>
