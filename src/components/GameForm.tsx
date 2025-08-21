@@ -13,6 +13,7 @@ interface GameFormProps {
   game?: Game | null;
   onSave: (game: Omit<Game, "id" | "createdAt" | "updatedAt">) => void;
   onCancel: () => void;
+  availableSagas?: string[];
 }
 
 export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
@@ -25,6 +26,7 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
     genres: game?.genres || [],
     whyLiked: game?.whyLiked || "",
     platform: game?.platform || "",
+    saga: game?.saga || "",
   });
 
   const [customGenre, setCustomGenre] = useState("");
@@ -81,6 +83,7 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
       genres: formData.genres,
       whyLiked: formData.whyLiked.trim() || undefined,
       platform: formData.platform.trim() || undefined,
+      saga: formData.saga.trim() || undefined,
     });
   };
 
@@ -285,6 +288,25 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
           />
         </div>
 
+
+        {/* Saga */}
+        <div className="space-y-2">
+          <Label htmlFor="saga">Saga</Label>
+          <Input
+            id="saga"
+            list="saga-list"
+            placeholder="Ex. : Dragon Quest, Zelda, Final Fantasy…"
+            value={formData.saga}
+            onChange={(e) => setFormData(prev => ({ ...prev, saga: e.target.value }))}
+           />
+           <datalist id="saga-list">
+             {(availableSagas || []).map((s) => (
+               <option key={s} value={s} />
+             ))}
+           </datalist>
+        </div>
+
+        
         {/* Platform */}
         <div className="space-y-2">
           <Label htmlFor="platform">Plateforme</Label>
