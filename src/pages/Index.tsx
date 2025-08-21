@@ -119,7 +119,7 @@ const Index = () => {
 
     const map = new Map<string, GameDTO[]>();
     for (const g of filteredGames) {
-      const key = g.saga?.trim() || "Jeux c'est où ?";
+      const key = g.saga?.trim() || "Jeux";
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(g);
     }
