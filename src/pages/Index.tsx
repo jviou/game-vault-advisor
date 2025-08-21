@@ -334,7 +334,7 @@ const Index = () => {
           open={!!viewingGame}
           onOpenChange={(open) => !open && setViewingGame(null)}
         >
-          <DialogContent className="max-w-xl p-0 overflow-hidden">
+          <DialogContent className="max-w-xl w-[95vw] sm:w-auto max-h-[90vh] p-0 overflow-y-auto">
             {viewingGame && (
               <div className="grid grid-cols-1 sm:grid-cols-2">
                 {/* Cover */}
@@ -343,7 +343,7 @@ const Index = () => {
                     <img
                       src={viewingGame.coverUrl}
                       alt={viewingGame.title}
-                      className="rounded-lg w-full h-auto object-cover"
+                       className="rounded-lg w-full h-auto sm:max-h-none max-h-[40vh] object-contain"
                     />
                   ) : (
                     <div className="w-full aspect-[3/4] rounded-lg bg-muted flex items-center justify-center">
