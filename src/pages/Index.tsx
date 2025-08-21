@@ -26,6 +26,9 @@ const Index = () => {
     sortOrder: "desc",
   });
 
+  // NEW: activer/désactiver l'affichage groupé par saga
+  const [groupBySaga, setGroupBySaga] = useState(true);
+
   async function refresh() {
     try {
       const data = await listGames();
@@ -96,11 +99,33 @@ const Index = () => {
     return filtered;
   }, [games, filters]);
 
+  // Plateformes (pour les filtres)
   const availablePlatforms = useMemo(() => {
     return Array.from(
       new Set(games.map((g) => g.platform).filter(Boolean) as string[])
     ).sort();
   }, [games]);
+
+  // NEW: Sagas (pour la datalist du formulaire)
+  const availableSagas = useMemo(() => {
+    return Array.from(
+      new Set(games.map((g) => g.saga?.trim()).filter(Boolean) as string[])
+    ).sort();
+  }, [games]);
+
+  // NEW: regrouper les jeux filtrés par saga
+  const groups = useMemo(() => {
+    if (!groupBySaga) return [["Tous les jeux", filteredGames] as const];
+
+    const map = new Map<string, GameDTO[]>();
+    for (const g of filteredGames) {
+      const key = g.saga?.trim() || "Sans saga";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(g);
+    }
+    // tri alphabétique des groupes
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [filteredGames, groupBySaga]);
 
   const handleSaveGame = async (
     gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
@@ -188,7 +213,7 @@ const Index = () => {
         </div>
 
         {/* Search + Filtres */}
-        <div className="mb-6 sm:mb-8">
+        <div className="mb-3 sm:mb-4">
           <SearchAndFilters
             filters={filters}
             onFiltersChange={setFilters}
@@ -196,8 +221,19 @@ const Index = () => {
           />
         </div>
 
-        {/* Grille */}
-        {filteredGames.length === 0 ? (
+        {/* NEW: Toggle regrouper par saga */}
+        <div className="flex items-center gap-2 mb-6">
+          <label className="text-sm text-muted-foreground">Regrouper par saga</label>
+          <input
+            type="checkbox"
+            checked={groupBySaga}
+            onChange={(e) => setGroupBySaga(e.target.checked)}
+            className="h-4 w-4 accent-primary"
+          />
+        </div>
+
+        {/* Grille (groupée ou non) */}
+        {groups.length === 0 || (groups.length === 1 && groups[0][1].length === 0) ? (
           <div className="text-center py-12">
             <h3 className="text-lg sm:text-xl font-semibold mb-2">
               {games.length === 0 ? "Aucun jeu" : "Aucun résultat"}
@@ -215,15 +251,30 @@ const Index = () => {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
-            {filteredGames.map((game) => (
-              <GameCard
-                key={game.id}
-                game={game}
-                onEdit={handleEditGame}
-                onDelete={handleDeleteGame}
-                onView={handleViewGame}
-              />
+          <div className="space-y-8">
+            {groups.map(([saga, list]) => (
+              <section key={saga}>
+                {groupBySaga && (
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-lg sm:text-xl font-semibold">
+                      {saga}{" "}
+                      <span className="text-muted-foreground">({list.length})</span>
+                    </h2>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
+                  {list.map((game) => (
+                    <GameCard
+                      key={game.id}
+                      game={game}
+                      onEdit={handleEditGame}
+                      onDelete={handleDeleteGame}
+                      onView={handleViewGame}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}
@@ -238,6 +289,8 @@ const Index = () => {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
+              // NEW: suggestions pour la datalist
+              availableSagas={availableSagas}
             />
           </DialogContent>
         </Dialog>
@@ -275,6 +328,9 @@ const Index = () => {
                     )}
                     {typeof viewingGame.rating === "number" && (
                       <div>Note : {viewingGame.rating}/5</div>
+                    )}
+                    {viewingGame.saga && (
+                      <div>Saga : {viewingGame.saga}</div>
                     )}
                   </div>
 
