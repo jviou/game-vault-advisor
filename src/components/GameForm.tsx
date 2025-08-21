@@ -152,6 +152,7 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                 </TabsTrigger>
               </TabsList>
 
+              {/* Onglet Manuel : URL / Upload */}
               <TabsContent value="manual" className="space-y-3">
                 <div className="flex gap-2">
                   <Input
@@ -182,13 +183,13 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                 />
               </TabsContent>
 
+              {/* Onglet SteamGridDB (SGDB ONLY) */}
               <TabsContent value="search" className="space-y-3">
                 <CoverPicker
-                  gameTitle={formData.title}
-                  onCoverSelect={(url) =>
+                  initialQuery={formData.title}
+                  onSelect={(url) =>
                     setFormData((prev) => ({ ...prev, coverUrl: url }))
                   }
-                  apiKey={process.env.STEAMGRIDDB_API_KEY}
                 />
               </TabsContent>
             </Tabs>
