@@ -26,7 +26,7 @@ const Index = () => {
     sortOrder: "desc",
   });
 
-  // NEW: activer/désactiver l'affichage groupé par saga
+  // Affichage groupé par saga
   const [groupBySaga, setGroupBySaga] = useState(true);
 
   async function refresh() {
@@ -106,24 +106,27 @@ const Index = () => {
     ).sort();
   }, [games]);
 
-  // NEW: Sagas (pour la datalist du formulaire)
+  // Sagas (pour la datalist du formulaire)
   const availableSagas = useMemo(() => {
     return Array.from(
-      new Set(games.map((g) => g.saga?.trim()).filter(Boolean) as string[])
+      new Set(
+        games
+          .map((g) => (g.saga || "").trim())
+          .filter((s) => s.length > 0)
+      )
     ).sort();
   }, [games]);
 
-  // NEW: regrouper les jeux filtrés par saga
+  // Regrouper les jeux filtrés par saga
   const groups = useMemo(() => {
     if (!groupBySaga) return [["Tous les jeux", filteredGames] as const];
 
     const map = new Map<string, GameDTO[]>();
     for (const g of filteredGames) {
-      const key = g.saga?.trim() || "Sans saga";
+      const key = (g.saga || "").trim() || "Sans saga";
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(g);
     }
-    // tri alphabétique des groupes
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [filteredGames, groupBySaga]);
 
@@ -160,6 +163,7 @@ const Index = () => {
     setEditingGame(game);
     setIsFormOpen(true);
   };
+
   const handleDeleteGame = async (id: number) => {
     const game = games.find((g) => g.id === id);
     if (!confirm(`Supprimer “${game?.title ?? "ce jeu"}” ?`)) return;
@@ -179,6 +183,7 @@ const Index = () => {
       });
     }
   };
+
   const handleViewGame = (game: GameDTO) => setViewingGame(game);
 
   return (
@@ -221,7 +226,7 @@ const Index = () => {
           />
         </div>
 
-        {/* NEW: Toggle regrouper par saga */}
+        {/* Toggle regrouper par saga */}
         <div className="flex items-center gap-2 mb-6">
           <label className="text-sm text-muted-foreground">Regrouper par saga</label>
           <input
@@ -289,13 +294,12 @@ const Index = () => {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              // NEW: suggestions pour la datalist
               availableSagas={availableSagas}
             />
           </DialogContent>
         </Dialog>
 
-        {/* 🔥 Dialog : Voir un jeu */}
+        {/* Dialog : Voir un jeu */}
         <Dialog
           open={!!viewingGame}
           onOpenChange={(open) => !open && setViewingGame(null)}
@@ -329,9 +333,7 @@ const Index = () => {
                     {typeof viewingGame.rating === "number" && (
                       <div>Note : {viewingGame.rating}/5</div>
                     )}
-                    {viewingGame.saga && (
-                      <div>Saga : {viewingGame.saga}</div>
-                    )}
+                    {viewingGame.saga && <div>Saga : {viewingGame.saga}</div>}
                   </div>
 
                   {!!viewingGame.genres?.length && (
