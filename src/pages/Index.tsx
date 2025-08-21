@@ -49,11 +49,13 @@ const Index = () => {
       if (
         filters.search &&
         !game.title?.toLowerCase().includes(filters.search.toLowerCase())
-      ) return false;
+      )
+        return false;
       if (
         filters.genres.length > 0 &&
         !filters.genres.some((g) => (game.genres || []).includes(g))
-      ) return false;
+      )
+        return false;
       if ((game.rating ?? 0) < filters.minRating) return false;
       if (filters.platform && game.platform !== filters.platform) return false;
       return true;
@@ -62,50 +64,94 @@ const Index = () => {
     filtered.sort((a, b) => {
       let aValue: any, bValue: any;
       switch (filters.sortBy) {
-        case "title": aValue = (a.title || "").toLowerCase(); bValue = (b.title || "").toLowerCase(); break;
-        case "rating": aValue = a.rating ?? 0; bValue = b.rating ?? 0; break;
-        case "finishedAt": aValue = a.finishedAt ? new Date(a.finishedAt).getTime() : 0; bValue = b.finishedAt ? new Date(b.finishedAt).getTime() : 0; break;
-        default: aValue = a.createdAt ? new Date(a.createdAt).getTime() : 0; bValue = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        case "title":
+          aValue = (a.title || "").toLowerCase();
+          bValue = (b.title || "").toLowerCase();
+          break;
+        case "rating":
+          aValue = a.rating ?? 0;
+          bValue = b.rating ?? 0;
+          break;
+        case "finishedAt":
+          aValue = a.finishedAt ? new Date(a.finishedAt).getTime() : 0;
+          bValue = b.finishedAt ? new Date(b.finishedAt).getTime() : 0;
+          break;
+        default:
+          aValue = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          bValue = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       }
       return filters.sortOrder === "asc"
-        ? aValue < bValue ? -1 : aValue > bValue ? 1 : 0
-        : aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+        ? aValue < bValue
+          ? -1
+          : aValue > bValue
+          ? 1
+          : 0
+        : aValue > bValue
+        ? -1
+        : aValue < bValue
+        ? 1
+        : 0;
     });
 
     return filtered;
   }, [games, filters]);
 
   const availablePlatforms = useMemo(() => {
-    return Array.from(new Set((games.map((g) => g.platform).filter(Boolean) as string[]))).sort();
+    return Array.from(
+      new Set(games.map((g) => g.platform).filter(Boolean) as string[])
+    ).sort();
   }, [games]);
 
-  const handleSaveGame = async (gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">) => {
+  const handleSaveGame = async (
+    gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
+  ) => {
     try {
       if (editingGame?.id != null) {
         await updateGame(editingGame.id, gameData);
-        toast({ title: "Jeu mis à jour", description: `${gameData.title} a été mis à jour.` });
+        toast({
+          title: "Jeu mis à jour",
+          description: `${gameData.title} a été mis à jour.`,
+        });
       } else {
         await createGame(gameData);
-        toast({ title: "Jeu ajouté", description: `${gameData.title} a été ajouté à votre collection.` });
+        toast({
+          title: "Jeu ajouté",
+          description: `${gameData.title} a été ajouté à votre collection.`,
+        });
       }
       setIsFormOpen(false);
       setEditingGame(null);
       await refresh();
     } catch (e: any) {
-      toast({ title: "Erreur", description: e?.message || "Échec de l’enregistrement.", variant: "destructive" });
+      toast({
+        title: "Erreur",
+        description: e?.message || "Échec de l’enregistrement.",
+        variant: "destructive",
+      });
     }
   };
 
-  const handleEditGame = (game: GameDTO) => { setEditingGame(game); setIsFormOpen(true); };
+  const handleEditGame = (game: GameDTO) => {
+    setEditingGame(game);
+    setIsFormOpen(true);
+  };
   const handleDeleteGame = async (id: number) => {
     const game = games.find((g) => g.id === id);
     if (!confirm(`Supprimer “${game?.title ?? "ce jeu"}” ?`)) return;
     try {
       await deleteGame(id);
-      toast({ title: "Jeu supprimé", description: `${game?.title ?? "Jeu"} supprimé.`, variant: "destructive" });
+      toast({
+        title: "Jeu supprimé",
+        description: `${game?.title ?? "Jeu"} supprimé.`,
+        variant: "destructive",
+      });
       await refresh();
     } catch (e: any) {
-      toast({ title: "Erreur", description: e?.message || "Échec de la suppression.", variant: "destructive" });
+      toast({
+        title: "Erreur",
+        description: e?.message || "Échec de la suppression.",
+        variant: "destructive",
+      });
     }
   };
   const handleViewGame = (game: GameDTO) => setViewingGame(game);
@@ -130,7 +176,10 @@ const Index = () => {
           </div>
 
           <Button
-            onClick={() => { setEditingGame(null); setIsFormOpen(true); }}
+            onClick={() => {
+              setEditingGame(null);
+              setIsFormOpen(true);
+            }}
             className="gap-2 shadow-glow-primary w-full sm:w-auto"
           >
             <Plus className="w-4 h-4" />
@@ -140,7 +189,11 @@ const Index = () => {
 
         {/* Search + Filtres */}
         <div className="mb-6 sm:mb-8">
-          <SearchAndFilters filters={filters} onFiltersChange={setFilters} availablePlatforms={availablePlatforms} />
+          <SearchAndFilters
+            filters={filters}
+            onFiltersChange={setFilters}
+            availablePlatforms={availablePlatforms}
+          />
         </div>
 
         {/* Grille */}
@@ -150,7 +203,13 @@ const Index = () => {
               {games.length === 0 ? "Aucun jeu" : "Aucun résultat"}
             </h3>
             {games.length === 0 && (
-              <Button onClick={() => { setEditingGame(null); setIsFormOpen(true); }} className="mt-4 gap-2">
+              <Button
+                onClick={() => {
+                  setEditingGame(null);
+                  setIsFormOpen(true);
+                }}
+                className="mt-4 gap-2"
+              >
                 <Plus className="w-4 h-4" /> Ajouter un jeu
               </Button>
             )}
@@ -158,19 +217,88 @@ const Index = () => {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
             {filteredGames.map((game) => (
-              <GameCard key={game.id} game={game} onEdit={handleEditGame} onDelete={handleDeleteGame} onView={handleViewGame} />
+              <GameCard
+                key={game.id}
+                game={game}
+                onEdit={handleEditGame}
+                onDelete={handleDeleteGame}
+                onView={handleViewGame}
+              />
             ))}
           </div>
         )}
 
-        {/* Dialogs */}
+        {/* Dialog : Formulaire Ajouter/Modifier */}
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <GameForm
               game={editingGame as any}
               onSave={handleSaveGame}
-              onCancel={() => { setIsFormOpen(false); setEditingGame(null); }}
+              onCancel={() => {
+                setIsFormOpen(false);
+                setEditingGame(null);
+              }}
             />
+          </DialogContent>
+        </Dialog>
+
+        {/* 🔥 Dialog : Voir un jeu */}
+        <Dialog
+          open={!!viewingGame}
+          onOpenChange={(open) => !open && setViewingGame(null)}
+        >
+          <DialogContent className="max-w-xl p-0 overflow-hidden">
+            {viewingGame && (
+              <div className="grid grid-cols-1 sm:grid-cols-2">
+                {/* Cover */}
+                <div className="bg-black/20 p-4 flex items-center justify-center">
+                  {viewingGame.coverUrl ? (
+                    <img
+                      src={viewingGame.coverUrl}
+                      alt={viewingGame.title}
+                      className="rounded-lg w-full h-auto object-cover"
+                    />
+                  ) : (
+                    <div className="w-full aspect-[3/4] rounded-lg bg-muted flex items-center justify-center">
+                      Pas de jaquette
+                    </div>
+                  )}
+                </div>
+
+                {/* Infos */}
+                <div className="p-4 space-y-3">
+                  <h3 className="text-xl font-bold">{viewingGame.title}</h3>
+
+                  <div className="text-sm text-muted-foreground">
+                    {viewingGame.platform && (
+                      <div>Plateforme : {viewingGame.platform}</div>
+                    )}
+                    {typeof viewingGame.rating === "number" && (
+                      <div>Note : {viewingGame.rating}/5</div>
+                    )}
+                  </div>
+
+                  {!!viewingGame.genres?.length && (
+                    <div className="flex flex-wrap gap-2">
+                      {viewingGame.genres.map((g) => (
+                        <span
+                          key={g}
+                          className="text-xs px-2 py-1 rounded bg-secondary/40"
+                        >
+                          {g}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {viewingGame.whyLiked && (
+                    <p className="text-sm leading-relaxed">
+                      {viewingGame.whyLiked}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
