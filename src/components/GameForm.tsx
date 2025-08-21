@@ -152,7 +152,7 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                 </TabsTrigger>
               </TabsList>
 
-              {/* Onglet Manuel : URL / Upload */}
+              {/* Manuel : URL / Upload */}
               <TabsContent value="manual" className="space-y-3">
                 <div className="flex gap-2">
                   <Input
@@ -183,7 +183,7 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
                 />
               </TabsContent>
 
-              {/* Onglet SteamGridDB (SGDB ONLY) */}
+              {/* SteamGridDB */}
               <TabsContent value="search" className="space-y-3">
                 <CoverPicker
                   initialQuery={formData.title}
@@ -223,7 +223,6 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
         <div className="space-y-3">
           <Label>Genres</Label>
 
-          {/* Selected genres */}
           {formData.genres.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {formData.genres.map((genre) => (
@@ -240,11 +239,8 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
             </div>
           )}
 
-          {/* Default genres */}
           <div className="flex flex-wrap gap-2">
-            {DEFAULT_GENRES.filter(
-              (genre) => !formData.genres.includes(genre)
-            ).map((genre) => (
+            {DEFAULT_GENRES.filter((genre) => !formData.genres.includes(genre)).map((genre) => (
               <Badge
                 key={genre}
                 variant="outline"
@@ -256,7 +252,6 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
             ))}
           </div>
 
-          {/* Custom genre input */}
           <div className="flex gap-2">
             <Input
               placeholder="Genre personnalisé"
@@ -304,7 +299,6 @@ export const GameForm = ({ game, onSave, onCancel }: GameFormProps) => {
           />
         </div>
 
-        {/* Actions */}
         <div className="flex gap-3 pt-4">
           <Button type="submit" className="flex-1">
             {game ? "Mettre à jour" : "Ajouter le jeu"}
