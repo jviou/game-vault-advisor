@@ -2,7 +2,11 @@ version: "3.9"
 
 services:
   game-vault:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_SGDB_KEY: ${VITE_SGDB_KEY}
     image: game-vault:latest
     container_name: game-vault
     restart: unless-stopped
