@@ -19,7 +19,7 @@ services:
     command: ["--host", "0.0.0.0", "/data/db.json"]
     restart: unless-stopped
 
-      sgdb-proxy:
+  sgdb-proxy:
     build:
       context: .
       dockerfile: Dockerfile.sgdb
