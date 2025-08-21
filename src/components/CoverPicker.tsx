@@ -10,13 +10,15 @@ type SgdbGrid = { url: string };
 
 interface CoverPickerProps {
   gameTitle: string;
-  apiKey?: string; // non utilisé côté proxy, signature conservée
+  apiKey?: string; // non utilisé côté proxy
   onCoverSelect: (url: string) => void;
+  onTitlePick?: (title: string) => void; // <-- NOUVEAU : met à jour le champ Titre
 }
 
 export const CoverPicker: React.FC<CoverPickerProps> = ({
   gameTitle,
   onCoverSelect,
+  onTitlePick,
 }) => {
   const [query, setQuery] = useState(gameTitle || "");
   const [loading, setLoading] = useState(false);
@@ -25,17 +27,17 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
   const [grids, setGrids] = useState<SgdbGrid[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // --- utils ---
   const canSearch = useMemo(() => query.trim().length >= 2, [query]);
-  const debounceRef = useRef<number | null>(null);
-  const clearDebounce = () => {
-    if (debounceRef.current) {
-      window.clearTimeout(debounceRef.current);
-      debounceRef.current = null;
+
+  // --- debounce util
+  const debRef = useRef<number | null>(null);
+  const clearDeb = () => {
+    if (debRef.current) {
+      window.clearTimeout(debRef.current);
+      debRef.current = null;
     }
   };
 
-  // Recherche jeux (accepte un terme explicite pour éviter décalage d'état)
   const searchGames = async (term: string) => {
     const q = term.trim();
     if (q.length < 2) return;
@@ -53,8 +55,9 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
       const json = await res.json();
       const data: SgdbGame[] = json?.data ?? [];
       setGames(data);
-      // pré-sélection du 1er jeu
       if (data.length > 0) {
+        // on choisit le premier jeu automatiquement et on remonte son nom
+        if (onTitlePick) onTitlePick(data[0].name);
         void pickGame(data[0].id);
       }
     } catch (e: any) {
@@ -64,7 +67,6 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
     }
   };
 
-  // Charge les jaquettes pour un jeu
   const pickGame = async (id: number) => {
     setActiveGameId(id);
     setGrids([]);
@@ -80,22 +82,21 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
     }
   };
 
-  // Garde le champ en phase avec gameTitle et déclenche une recherche auto (debounce)
+  // recherche AUTO quand le titre tapé change (petit debounce)
   useEffect(() => {
     const next = (gameTitle || "").trim();
     setQuery(next);
-    clearDebounce();
+    clearDeb();
     if (next.length >= 2) {
-      debounceRef.current = window.setTimeout(() => searchGames(next), 350);
+      debRef.current = window.setTimeout(() => searchGames(next), 350);
     }
-    // cleanup
-    return clearDebounce;
+    return clearDeb;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameTitle]);
 
   return (
     <div className="space-y-3">
-      {/* barre de recherche */}
+      {/* champ + bouton rechercher */}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -106,10 +107,7 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
             className="pl-8"
           />
         </div>
-        <Button
-          onClick={() => searchGames(query)}
-          disabled={!canSearch || loading}
-        >
+        <Button onClick={() => searchGames(query)} disabled={!canSearch || loading}>
           {loading ? "Recherche…" : "Rechercher"}
         </Button>
       </div>
@@ -117,16 +115,17 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
       {/* suggestions de jeux */}
       {games.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {games.slice(0, 12).map((g) => {
-            const isActive = g.id === activeGameId;
+          {games.slice(0, 14).map((g) => {
+            const active = g.id === activeGameId;
             return (
               <Badge
                 key={g.id}
-                onClick={() => pickGame(g.id)}
-                variant={isActive ? "default" : "secondary"}
-                className={`cursor-pointer transition ${
-                  isActive ? "ring-2 ring-primary" : "hover:bg-secondary/80"
-                }`}
+                className={`cursor-pointer transition ${active ? "ring-2 ring-primary" : "hover:bg-secondary/80"}`}
+                variant={active ? "default" : "secondary"}
+                onClick={() => {
+                  if (onTitlePick) onTitlePick(g.name); // <-- met à jour le champ Titre
+                  pickGame(g.id);
+                }}
               >
                 {g.name}
               </Badge>
@@ -135,7 +134,6 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
         </div>
       )}
 
-      {/* messages */}
       {!!error && <p className="text-sm text-destructive">{String(error)}</p>}
       {!loading && games.length === 0 && !error && (
         <div className="text-xs text-muted-foreground flex items-center gap-2">
@@ -144,31 +142,27 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
         </div>
       )}
 
-      {/* grille des jaquettes : tuiles taille fixe, clic fiabilisé */}
+      {/* grille de jaquettes — tuiles taille fixe + vrai button */}
       {grids.length > 0 && (
         <div className="max-h-[60vh] overflow-y-auto pr-0.5">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {grids.map((grid, idx) => (
-              <div
+              <button
                 key={`${grid.url}-${idx}`}
-                role="button"
-                tabIndex={0}
+                type="button"                // <-- empêche tout submit
                 onClick={() => onCoverSelect(grid.url)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") onCoverSelect(grid.url);
-                }}
-                className="group relative rounded-lg border bg-background hover:shadow-md transition focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+                className="group relative rounded-lg border bg-background hover:shadow-md transition focus:outline-none focus:ring-2 focus:ring-primary"
                 title="Choisir cette jaquette"
               >
                 <div className="w-28 h-40 overflow-hidden rounded-md">
                   <img
                     src={grid.url}
                     alt="cover"
-                    className="h-full w-full object-cover"
                     loading="lazy"
+                    className="h-full w-full object-cover"
                   />
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
