@@ -1,24 +1,22 @@
-version: "3.9"
-
 services:
   game-vault:
     build:
       context: .
-      dockerfile: Dockerfile
-      args:
-        VITE_SGDB_KEY: ${VITE_SGDB_KEY}
-    image: game-vault:latest
+      dockerfile: dockerfile
     container_name: game-vault
-    restart: unless-stopped
+    depends_on:
+      - json-db
+      - sgdb-proxy
     ports:
-      - "8099:80"        # http://<ip>:8099
+      - "8099:80"
+    restart: unless-stopped
 
   json-db:
     image: clue/json-server
     container_name: game-vault-db
     volumes:
       - /opt/game-vault-data/db.json:/data/db.json
-    command: /data/db.json
+    command: ["--host", "0.0.0.0", "/data/db.json"]
     restart: unless-stopped
 
   sgdb-proxy:
@@ -30,7 +28,5 @@ services:
       - PORT=3000
     volumes:
       - ./server:/srv:ro
-    command: [ "node", "index.js" ]
+    command: ["node", "index.js"]
     restart: unless-stopped
-    networks:
-      - app-net
