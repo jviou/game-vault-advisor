@@ -1,6 +1,8 @@
 # ---- build ----
 FROM node:20-alpine AS build
 WORKDIR /app
+ARG VITE_SGDB_KEY
+ENV VITE_SGDB_KEY=${VITE_SGDB_KEY}
 COPY package*.json ./
 RUN npm ci
 COPY . .
