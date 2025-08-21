@@ -1,3 +1,6 @@
+// DEBUG: retirer après test
+console.log("[SGDB] key present?", Boolean(import.meta.env.VITE_SGDB_KEY));
+
 // src/lib/steamgriddb.ts
 const SGDB_BASE = "https://www.steamgriddb.com/api/v2";
 const SGDB_KEY = import.meta.env.VITE_SGDB_KEY as string;
