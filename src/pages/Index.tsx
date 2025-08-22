@@ -1,6 +1,6 @@
 // src/pages/Index.tsx
-import { useEffect, useMemo, useState } from "react";
-import { Plus, Gamepad2, Download } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Plus, Gamepad2, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import GameCard from "@/components/GameCard";
@@ -28,6 +28,9 @@ const Index = () => {
 
   // Affichage groupé par saga
   const [groupBySaga, setGroupBySaga] = useState(true);
+
+  // input caché pour l'import
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   async function refresh() {
     try {
@@ -150,6 +153,58 @@ const Index = () => {
     }
   };
 
+  // --- Import JSON (remplace la base par le fichier) ---
+  const handleImportFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!Array.isArray(data)) throw new Error("Invalid JSON format (array expected)");
+
+      if (
+        !confirm(
+          "Importer ce fichier va remplacer votre collection actuelle. Continuer ?"
+        )
+      ) {
+        return;
+      }
+
+      // purge
+      for (const g of games) {
+        await deleteGame(g.id);
+      }
+
+      // réinjection
+      for (const g of data) {
+        await createGame({
+          title: g.title,
+          coverUrl: g.coverUrl,
+          rating: g.rating ?? 1,
+          genres: Array.isArray(g.genres) ? g.genres : [],
+          whyLiked: g.whyLiked,
+          platform: g.platform,
+          saga: g.saga,
+          finishedAt: g.finishedAt,
+        });
+      }
+
+      toast({
+        title: "Import réussi",
+        description: `${data.length} jeux importés.`,
+      });
+
+      await refresh();
+    } catch (e: any) {
+      toast({
+        title: "Erreur d’import",
+        description: e?.message || "Le fichier est invalide.",
+        variant: "destructive",
+      });
+    } finally {
+      // reset la valeur pour permettre de réimporter le même fichier si besoin
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  };
+
   const handleSaveGame = async (
     gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
@@ -224,6 +279,28 @@ const Index = () => {
           </div>
 
           <div className="flex gap-2 w-full sm:w-auto">
+            {/* input caché pour l’import */}
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleImportFile(file);
+              }}
+            />
+
+            <Button
+              variant="secondary"
+              onClick={() => importInputRef.current?.click()}
+              className="gap-2 w-full sm:w-auto"
+              title="Importer un fichier JSON et remplacer la collection"
+            >
+              <Upload className="w-4 h-4" />
+              Importer JSON
+            </Button>
+
             <Button
               variant="outline"
               onClick={handleExportAll}
@@ -343,7 +420,7 @@ const Index = () => {
                     <img
                       src={viewingGame.coverUrl}
                       alt={viewingGame.title}
-                       className="rounded-lg w-full h-auto sm:max-h-none max-h-[40vh] object-contain"
+                      className="rounded-lg w-full h-auto sm:max-h-none max-h-[40vh] object-contain"
                     />
                   ) : (
                     <div className="w-full aspect-[3/4] rounded-lg bg-muted flex items-center justify-center">
