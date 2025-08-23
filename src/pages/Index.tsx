@@ -1,6 +1,6 @@
 // src/pages/Index.tsx
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Gamepad2, EllipsisVertical, ArrowLeft } from "lucide-react";
+import { Plus, Gamepad2, MoreVertical, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import GameCard from "@/components/GameCard";
@@ -9,29 +9,22 @@ import { SearchAndFilters, Filters } from "@/components/SearchAndFilters";
 import type { GameDTO } from "@/lib/api";
 import { listGames, createGame, updateGame, deleteGame } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+import { Link } from "react-router-dom";
 
+// (petit utilitaire pour créer l’URL /s/:slug)
 const slug = (s: string) =>
-  (s || "jeux")
+  (s || "JEUX")
     .toUpperCase()
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .replace(/[^A-Z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+    .replace(/(^-|-$)/g, "")
+    .toLowerCase();
 
 const Index = () => {
   const [games, setGames] = useState<GameDTO[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
-  const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
-  const [groupBySaga, setGroupBySaga] = useState(true); // gardé pour cohérence mais on reste en mode vignettes
-  const [activeSection, setActiveSection] = useState<string | null>(null); // <- la section ouverte
   const { toast } = useToast();
 
   const [filters, setFilters] = useState<Filters>({
@@ -42,6 +35,50 @@ const Index = () => {
     sortBy: "createdAt",
     sortOrder: "desc",
   });
+
+  // Import / Export JSON (menu)
+  const handleExportAll = () => {
+    try {
+      const data = JSON.stringify(games, null, 2);
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const date = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `game-vault_${date}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Export JSON", description: "La collection a été exportée." });
+    } catch (e: any) {
+      toast({
+        title: "Export échoué",
+        description: e?.message || "Impossible d’exporter le JSON.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleImportAll = async (file: File) => {
+    try {
+      const text = await file.text();
+      const arr = JSON.parse(text) as GameDTO[];
+      // Import simple : on crée un par un (à adapter si tu veux écraser/vider avant)
+      for (const g of arr) {
+        const { id, createdAt, updatedAt, ...payload } = g as any;
+        await createGame(payload);
+      }
+      toast({ title: "Import JSON", description: "Import terminé." });
+      refresh();
+    } catch (e: any) {
+      toast({
+        title: "Import échoué",
+        description: e?.message || "Impossible d’importer ce JSON.",
+        variant: "destructive",
+      });
+    }
+  };
 
   async function refresh() {
     try {
@@ -60,18 +97,12 @@ const Index = () => {
     refresh();
   }, []);
 
-  // Filtrage + tri
+  // On garde les filtres de recherche pour que la liste de vignettes obéisse à la recherche/plateforme/note/genres
   const filteredGames = useMemo(() => {
     let filtered = games.filter((game) => {
-      if (
-        filters.search &&
-        !game.title?.toLowerCase().includes(filters.search.toLowerCase())
-      )
+      if (filters.search && !game.title?.toLowerCase().includes(filters.search.toLowerCase()))
         return false;
-      if (
-        filters.genres.length > 0 &&
-        !filters.genres.some((g) => (game.genres || []).includes(g))
-      )
+      if (filters.genres.length > 0 && !filters.genres.some((g) => (game.genres || []).includes(g)))
         return false;
       if ((game.rating ?? 0) < filters.minRating) return false;
       if (filters.platform && game.platform !== filters.platform) return false;
@@ -97,129 +128,32 @@ const Index = () => {
           aValue = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           bValue = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       }
-      return filters.sortOrder === "asc"
-        ? aValue < bValue
-          ? -1
-          : aValue > bValue
-          ? 1
-          : 0
-        : aValue > bValue
-        ? -1
-        : aValue < bValue
-        ? 1
-        : 0;
+      return filters.sortOrder === "asc" ? (aValue < bValue ? -1 : aValue > bValue ? 1 : 0)
+                                         : (aValue > bValue ? -1 : aValue < bValue ? 1 : 0);
     });
 
     return filtered;
   }, [games, filters]);
 
-  // Plateformes (filtres)
-  const availablePlatforms = useMemo(() => {
-    return Array.from(
-      new Set(filteredGames.map((g) => g.platform).filter(Boolean) as string[])
-    ).sort();
-  }, [filteredGames]);
-
-  // Sagas (form datalist)
-  const availableSagas = useMemo(() => {
-    return Array.from(
-      new Set(filteredGames.map((g) => g.saga?.trim()).filter(Boolean) as string[])
-    ).sort();
-  }, [filteredGames]);
-
-  // Groupes par saga (et JEUX pour les jeux hors-saga)
+  // Construit les groupes : "JEUX" (= sans saga) + chaque saga
   const groups = useMemo(() => {
     const map = new Map<string, GameDTO[]>();
-    const unsaga: GameDTO[] = [];
-
     for (const g of filteredGames) {
-      const key = g.saga?.trim();
-      if (!key) {
-        unsaga.push(g);
-        continue;
-      }
-      const upper = key.toUpperCase();
-      if (!map.has(upper)) map.set(upper, []);
-      map.get(upper)!.push(g);
+      const key = (g.saga?.trim() || "").toUpperCase();
+      const groupName = key || "JEUX";
+      if (!map.has(groupName)) map.set(groupName, []);
+      map.get(groupName)!.push(g);
     }
-
-    const arr: [string, GameDTO[]][] = [];
-    if (unsaga.length) arr.push(["JEUX", unsaga]);
-    for (const [k, v] of map.entries()) arr.push([k, v]);
-
-    // JEUX en premier, puis tri alpha
-    return arr.sort(([a], [b]) => {
-      if (a === "JEUX") return -1;
-      if (b === "JEUX") return 1;
-      return a.localeCompare(b);
-    });
+    // JEUX en premier, puis sagas triées alpha
+    const entries = Array.from(map.entries());
+    const first = entries.filter(([k]) => k === "JEUX");
+    const rest = entries.filter(([k]) => k !== "JEUX").sort(([a], [b]) => a.localeCompare(b));
+    return [...first, ...rest];
   }, [filteredGames]);
 
-  // Tuile d’aperçu (prend la 1re cover dispo)
-  const sagaTiles = useMemo(() => {
-    return groups.map(([saga, list]) => {
-      const first = list.find((g) => !!g.coverUrl) || list[0];
-      return {
-        saga,
-        count: list.length,
-        thumb: first?.coverUrl || "",
-      };
-    });
-  }, [groups]);
-
-  // --- Import/Export ---
-  const handleExportAll = () => {
-    try {
-      const data = JSON.stringify(games, null, 2);
-      const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      const date = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `game-vault_${date}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast({ title: "Export JSON", description: "La collection a été exportée." });
-    } catch (e: any) {
-      toast({
-        title: "Export échoué",
-        description: e?.message || "Impossible d’exporter le JSON.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleImport = async () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "application/json";
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const data: GameDTO[] = JSON.parse(text);
-        // reset + réinsertion
-        const toDelete = await listGames();
-        await Promise.allSettled(toDelete.map((g) => deleteGame(g.id)));
-        for (const g of data) {
-          const { id, createdAt, updatedAt, ...rest } = g as any;
-          await createGame(rest);
-        }
-        toast({ title: "Import JSON", description: "Collection importée." });
-        await refresh();
-      } catch (e: any) {
-        toast({
-          title: "Import échoué",
-          description: e?.message || "Impossible d’importer ce JSON.",
-          variant: "destructive",
-        });
-      }
-    };
-    input.click();
-  };
+  const availablePlatforms = useMemo(() => {
+    return Array.from(new Set(games.map((g) => g.platform).filter(Boolean) as string[])).sort();
+  }, [games]);
 
   const handleSaveGame = async (
     gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
@@ -227,16 +161,10 @@ const Index = () => {
     try {
       if (editingGame?.id != null) {
         await updateGame(editingGame.id, gameData);
-        toast({
-          title: "Jeu mis à jour",
-          description: `${gameData.title} a été mis à jour.`,
-        });
+        toast({ title: "Jeu mis à jour", description: `${gameData.title} a été mis à jour.` });
       } else {
         await createGame(gameData);
-        toast({
-          title: "Jeu ajouté",
-          description: `${gameData.title} a été ajouté à votre collection.`,
-        });
+        toast({ title: "Jeu ajouté", description: `${gameData.title} a été ajouté à votre collection.` });
       }
       setIsFormOpen(false);
       setEditingGame(null);
@@ -250,32 +178,6 @@ const Index = () => {
     }
   };
 
-  const handleEditGame = (game: GameDTO) => {
-    setEditingGame(game);
-    setIsFormOpen(true);
-  };
-  const handleDeleteGame = async (id: number) => {
-    const game = games.find((g) => g.id === id);
-    if (!confirm(`Supprimer “${game?.title ?? "ce jeu"}” ?`)) return;
-    try {
-      await deleteGame(id);
-      toast({
-        title: "Jeu supprimé",
-        description: `${game?.title ?? "Jeu"} supprimé.`,
-        variant: "destructive",
-      });
-      await refresh();
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e?.message || "Échec de la suppression.",
-        variant: "destructive",
-      });
-    }
-  };
-  const handleViewGame = (game: GameDTO) => setViewingGame(game);
-
-  // Rendu
   return (
     <div className="min-h-screen bg-gradient-hero">
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
@@ -295,44 +197,50 @@ const Index = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          {/* Boutons à droite : menu Import/Export + Ajouter */}
+          <div className="flex items-center gap-2">
+            {/* Menu simple (Importer/Exporter) */}
+            <div className="relative group">
+              <Button variant="outline" className="gap-2">
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+              <div className="hidden group-hover:block absolute right-0 mt-2 w-44 rounded-md border bg-popover p-1 shadow-md z-20">
+                <button
+                  className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded hover:bg-muted"
+                  onClick={handleExportAll}
+                >
+                  <Download className="w-4 h-4" /> Exporter JSON
+                </button>
+                <label className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded hover:bg-muted cursor-pointer">
+                  <Upload className="w-4 h-4" /> Importer JSON
+                  <input
+                    type="file"
+                    accept="application/json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleImportAll(f);
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+
             <Button
               onClick={() => {
                 setEditingGame(null);
                 setIsFormOpen(true);
               }}
-              className="gap-2 shadow-glow-primary w-full sm:w-auto"
+              className="gap-2 shadow-glow-primary"
             >
               <Plus className="w-4 h-4" />
               Ajouter
             </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" title="Plus d’options">
-                  <EllipsisVertical className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={handleImport}>
-                  Importer JSON
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportAll}>
-                  Exporter JSON
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => setGroupBySaga((v) => !v)}
-                >
-                  {groupBySaga ? "Désactiver le regroupement" : "Regrouper par saga"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </div>
 
-        {/* Recherche + Filtres */}
-        <div className="mb-3 sm:mb-4">
+        {/* Barre de recherche / filtres */}
+        <div className="mb-6 sm:mb-8">
           <SearchAndFilters
             filters={filters}
             onFiltersChange={setFilters}
@@ -340,74 +248,57 @@ const Index = () => {
           />
         </div>
 
-        {/* === VIGNETTES DE SAGAS & JEUX === */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4 sm:gap-6 mb-8">
-          {groups.map(([saga, list]) => {
-            const first = list.find((g) => !!g.coverUrl) || list[0];
-            return (
-              <button
-                key={saga}
-                onClick={() => setActiveSection(saga)}
-                className="group relative rounded-xl overflow-hidden bg-muted/30 border border-border hover:shadow-lg transition focus:outline-none"
-                title={`Voir ${saga}`}
-              >
-                <div className="aspect-[3/4] w-full overflow-hidden bg-black/20">
-                  {first?.coverUrl ? (
-                    <img
-                      src={first.coverUrl}
-                      alt={saga}
-                      className="w-full h-full object-cover group-hover:scale-105 transition"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
-                      Aucun visuel
-                    </div>
-                  )}
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />
-                <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-white">
-                  <div className="font-semibold truncate">{saga}</div>
-                  <span className="text-xs bg-white/15 px-2 py-0.5 rounded-full">
-                    {list.length}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* === SECTION ACTIVE UNIQUEMENT (si sélectionnée) === */}
-        {activeSection && (
-          <div className="space-y-4 mb-10">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg sm:text-xl font-semibold">{activeSection}</h2>
+        {/* === Grille de vignettes (JEUX + Sagas) === */}
+        {groups.length === 0 ? (
+          <div className="text-center py-12">
+            <h3 className="text-lg sm:text-xl font-semibold mb-2">
+              {games.length === 0 ? "Aucun jeu" : "Aucun résultat"}
+            </h3>
+            {games.length === 0 && (
               <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() => setActiveSection(null)}
+                onClick={() => {
+                  setEditingGame(null);
+                  setIsFormOpen(true);
+                }}
+                className="mt-4 gap-2"
               >
-                <ArrowLeft className="w-4 h-4" />
-                Retour aux sagas
+                <Plus className="w-4 h-4" /> Ajouter un jeu
               </Button>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
-              {(() => {
-                const entry = groups.find(([s]) => s === activeSection);
-                const list = entry ? entry[1] : [];
-                return list.map((game) => (
-                  <GameCard
-                    key={game.id}
-                    game={game}
-                    onEdit={handleEditGame}
-                    onDelete={handleDeleteGame}
-                    onView={handleViewGame}
-                  />
-                ));
-              })()}
-            </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4 sm:gap-6">
+            {groups.map(([saga, list]) => {
+              const first = list.find((g) => !!g.coverUrl) || list[0];
+              return (
+                <Link
+                  key={saga}
+                  to={`/s/${slug(saga)}`}
+                  className="group relative rounded-xl overflow-hidden bg-muted/30 border border-border hover:shadow-lg transition focus:outline-none"
+                  title={`Voir ${saga}`}
+                >
+                  <div className="aspect-[3/4] w-full overflow-hidden bg-black/20">
+                    {first?.coverUrl ? (
+                      <img
+                        src={first.coverUrl}
+                        alt={saga}
+                        className="w-full h-full object-cover group-hover:scale-105 transition"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
+                        Aucun visuel
+                      </div>
+                    )}
+                  </div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />
+                  <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-white">
+                    <div className="font-semibold truncate">{saga}</div>
+                    <span className="text-xs bg-white/15 px-2 py-0.5 rounded-full">{list.length}</span>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         )}
 
@@ -421,51 +312,10 @@ const Index = () => {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              availableSagas={availableSagas}
+              availableSagas={Array.from(
+                new Set(games.map((g) => g.saga?.trim()).filter(Boolean) as string[])
+              ).sort()}
             />
-          </DialogContent>
-        </Dialog>
-
-        {/* Dialog : Voir un jeu */}
-        <Dialog open={!!viewingGame} onOpenChange={(open) => !open && setViewingGame(null)}>
-          <DialogContent className="max-w-xl w-[95vw] sm:w-auto max-h-[90vh] p-0 overflow-y-auto">
-            {viewingGame && (
-              <div className="grid grid-cols-1 sm:grid-cols-2">
-                {/* Cover */}
-                <div className="bg-black/20 p-4 flex items-center justify-center">
-                  {viewingGame.coverUrl ? (
-                    <img
-                      src={viewingGame.coverUrl}
-                      alt={viewingGame.title}
-                      className="rounded-lg w-full h-auto sm:max-h-none max-h-[40vh] object-contain"
-                    />
-                  ) : (
-                    <div className="w-full aspect-[3/4] rounded-lg bg-muted flex items-center justify-center">
-                      Pas de jaquette
-                    </div>
-                  )}
-                </div>
-                {/* Infos */}
-                <div className="p-4 space-y-3">
-                  <h3 className="text-xl font-bold">{viewingGame.title}</h3>
-                  <div className="text-sm text-muted-foreground">
-                    {viewingGame.platform && <div>Plateforme : {viewingGame.platform}</div>}
-                    {typeof viewingGame.rating === "number" && <div>Note : {viewingGame.rating}/5</div>}
-                    {viewingGame.saga && <div>Saga : {viewingGame.saga}</div>}
-                  </div>
-                  {!!viewingGame.genres?.length && (
-                    <div className="flex flex-wrap gap-2">
-                      {viewingGame.genres.map((g) => (
-                        <span key={g} className="text-xs px-2 py-1 rounded bg-secondary/40">
-                          {g}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {viewingGame.whyLiked && <p className="text-sm leading-relaxed">{viewingGame.whyLiked}</p>}
-                </div>
-              </div>
-            )}
           </DialogContent>
         </Dialog>
       </div>
