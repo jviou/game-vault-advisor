@@ -1,6 +1,6 @@
 // src/pages/Index.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Gamepad2, EllipsisVertical, ChevronRight, ChevronDown } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Gamepad2, EllipsisVertical, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import GameCard from "@/components/GameCard";
@@ -17,14 +17,12 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
-type ViewMode = "list" | "tiles";
-
 const slug = (s: string) =>
   (s || "jeux")
-    .toLowerCase()
+    .toUpperCase()
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^A-Z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 
 const Index = () => {
@@ -32,10 +30,8 @@ const Index = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
   const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [groupBySaga, setGroupBySaga] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>("tiles"); // << NEW (par défaut en vignettes)
-  const sectionsRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const [groupBySaga, setGroupBySaga] = useState(true); // gardé pour cohérence mais on reste en mode vignettes
+  const [activeSection, setActiveSection] = useState<string | null>(null); // <- la section ouverte
   const { toast } = useToast();
 
   const [filters, setFilters] = useState<Filters>({
@@ -64,7 +60,7 @@ const Index = () => {
     refresh();
   }, []);
 
-  // Filtre + tri
+  // Filtrage + tri
   const filteredGames = useMemo(() => {
     let filtered = games.filter((game) => {
       if (
@@ -131,11 +127,8 @@ const Index = () => {
     ).sort();
   }, [filteredGames]);
 
-  // Groupes par saga
+  // Groupes par saga (et JEUX pour les jeux hors-saga)
   const groups = useMemo(() => {
-    if (!groupBySaga)
-      return [["Jeux", filteredGames] as const];
-
     const map = new Map<string, GameDTO[]>();
     const unsaga: GameDTO[] = [];
 
@@ -145,43 +138,34 @@ const Index = () => {
         unsaga.push(g);
         continue;
       }
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(g);
+      const upper = key.toUpperCase();
+      if (!map.has(upper)) map.set(upper, []);
+      map.get(upper)!.push(g);
     }
 
     const arr: [string, GameDTO[]][] = [];
-    if (unsaga.length) arr.push(["Jeux", unsaga]);
+    if (unsaga.length) arr.push(["JEUX", unsaga]);
+    for (const [k, v] of map.entries()) arr.push([k, v]);
 
-    for (const [k, v] of map.entries()) {
-      arr.push([k, v]);
-    }
-
-    // tri alpha, mais "Jeux" en premier
+    // JEUX en premier, puis tri alpha
     return arr.sort(([a], [b]) => {
-      if (a === "Jeux") return -1;
-      if (b === "Jeux") return 1;
+      if (a === "JEUX") return -1;
+      if (b === "JEUX") return 1;
       return a.localeCompare(b);
     });
-  }, [filteredGames, groupBySaga]);
+  }, [filteredGames]);
 
-  // Résumés de saga pour le mode vignettes
+  // Tuile d’aperçu (prend la 1re cover dispo)
   const sagaTiles = useMemo(() => {
-    if (!groupBySaga) return [];
-
-    return groups
-      .filter(([saga]) => saga !== "Jeux")
-      .map(([saga, list]) => {
-        const first =
-          list.find((g) => !!g.coverUrl) ||
-          list[0];
-        return {
-          saga,
-          count: list.length,
-          thumb: first?.coverUrl || "",
-          anchor: `sec-${slug(saga)}`,
-        };
-      });
-  }, [groups, groupBySaga]);
+    return groups.map(([saga, list]) => {
+      const first = list.find((g) => !!g.coverUrl) || list[0];
+      return {
+        saga,
+        count: list.length,
+        thumb: first?.coverUrl || "",
+      };
+    });
+  }, [groups]);
 
   // --- Import/Export ---
   const handleExportAll = () => {
@@ -217,7 +201,7 @@ const Index = () => {
       try {
         const text = await file.text();
         const data: GameDTO[] = JSON.parse(text);
-        // wipe & reload
+        // reset + réinsertion
         const toDelete = await listGames();
         await Promise.allSettled(toDelete.map((g) => deleteGame(g.id)));
         for (const g of data) {
@@ -291,19 +275,7 @@ const Index = () => {
   };
   const handleViewGame = (game: GameDTO) => setViewingGame(game);
 
-  const toggleSection = (key: string) =>
-    setCollapsed((c) => ({ ...c, [key]: !c[key] }));
-
-  const scrollToSection = (anchor: string, ensureOpenKey?: string) => {
-    if (ensureOpenKey) {
-      setCollapsed((c) => ({ ...c, [ensureOpenKey]: false }));
-    }
-    requestAnimationFrame(() => {
-      const el = sectionsRef.current[anchor];
-      el?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  };
-
+  // Rendu
   return (
     <div className="min-h-screen bg-gradient-hero">
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
@@ -324,26 +296,6 @@ const Index = () => {
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            {/* Switch Vue */}
-            <div className="rounded-lg border border-border p-1 flex">
-              <Button
-                variant={viewMode === "list" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setViewMode("list")}
-                className="px-3"
-              >
-                Liste
-              </Button>
-              <Button
-                variant={viewMode === "tiles" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setViewMode("tiles")}
-                className="px-3"
-              >
-                Vignettes
-              </Button>
-            </div>
-
             <Button
               onClick={() => {
                 setEditingGame(null);
@@ -355,7 +307,6 @@ const Index = () => {
               Ajouter
             </Button>
 
-            {/* Menu ... (Import/Export) */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" title="Plus d’options">
@@ -380,7 +331,7 @@ const Index = () => {
           </div>
         </div>
 
-        {/* Search + Filtres */}
+        {/* Recherche + Filtres */}
         <div className="mb-3 sm:mb-4">
           <SearchAndFilters
             filters={filters}
@@ -389,140 +340,76 @@ const Index = () => {
           />
         </div>
 
-        {/* Toggle regrouper par saga */}
-        <div className="flex items-center gap-2 mb-6">
-          <label className="text-sm text-muted-foreground">Regrouper par saga</label>
-          <input
-            type="checkbox"
-            checked={groupBySaga}
-            onChange={(e) => setGroupBySaga(e.target.checked)}
-            className="h-4 w-4 accent-primary"
-          />
-        </div>
-
-        {/* ===== MODE VIGNETTES DE SAGAS ===== */}
-        {groupBySaga && viewMode === "tiles" && sagaTiles.length > 0 && (
-          <>
-            {/* Grille des vignettes de sagas */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4 sm:gap-6 mb-10">
-              {/* Tuile “Jeux” (sans saga) si présente */}
-              {(() => {
-                const jeuxGroup = groups.find(([s]) => s === "Jeux");
-                if (!jeuxGroup) return null;
-                const [_, list] = jeuxGroup;
-                const first = list.find((g) => !!g.coverUrl) || list[0];
-                const anchor = `sec-${slug("Jeux")}`;
-                return (
-                  <button
-                    key="Jeux"
-                    onClick={() => scrollToSection(anchor, "Jeux")}
-                    className="group relative rounded-xl overflow-hidden bg-muted/30 border border-border hover:shadow-lg transition focus:outline-none"
-                  >
-                    <div className="aspect-[3/4] w-full overflow-hidden bg-black/20">
-                      {first?.coverUrl ? (
-                        <img
-                          src={first.coverUrl}
-                          alt="Jeux"
-                          className="w-full h-full object-cover group-hover:scale-105 transition"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
-                          Aucun visuel
-                        </div>
-                      )}
-                    </div>
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />
-                    <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-white">
-                      <div className="font-semibold truncate">Jeux</div>
-                      <span className="text-xs bg-white/15 px-2 py-0.5 rounded-full">
-                        {list.length}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })()}
-
-              {sagaTiles.map(({ saga, count, thumb, anchor }) => (
-                <button
-                  key={saga}
-                  onClick={() => scrollToSection(anchor, saga)}
-                  className="group relative rounded-xl overflow-hidden bg-muted/30 border border-border hover:shadow-lg transition focus:outline-none"
-                >
-                  <div className="aspect-[3/4] w-full overflow-hidden bg-black/20">
-                    {thumb ? (
-                      <img
-                        src={thumb}
-                        alt={saga}
-                        className="w-full h-full object-cover group-hover:scale-105 transition"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
-                        Aucun visuel
-                      </div>
-                    )}
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />
-                  <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-white">
-                    <div className="font-semibold truncate">{saga}</div>
-                    <span className="text-xs bg-white/15 px-2 py-0.5 rounded-full">
-                      {count}
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* ===== LISTE DES SECTIONS (toujours rendue) ===== */}
-        <div className="space-y-8">
+        {/* === VIGNETTES DE SAGAS & JEUX === */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4 sm:gap-6 mb-8">
           {groups.map(([saga, list]) => {
-            const key = saga;
-            const isOpen = !collapsed[key];
-            const anchor = `sec-${slug(saga)}`;
+            const first = list.find((g) => !!g.coverUrl) || list[0];
             return (
-              <section
-                key={key}
-                id={anchor}
-                ref={(el) => (sectionsRef.current[anchor] = el)}
+              <button
+                key={saga}
+                onClick={() => setActiveSection(saga)}
+                className="group relative rounded-xl overflow-hidden bg-muted/30 border border-border hover:shadow-lg transition focus:outline-none"
+                title={`Voir ${saga}`}
               >
-                {/* Header de section pliable */}
-                <button
-                  onClick={() => toggleSection(key)}
-                  className="w-full flex items-center gap-2 text-left group mb-3"
-                >
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-sm border border-border bg-muted/30 text-muted-foreground">
-                    {isOpen ? (
-                      <ChevronDown className="w-4 h-4" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4" />
-                    )}
+                <div className="aspect-[3/4] w-full overflow-hidden bg-black/20">
+                  {first?.coverUrl ? (
+                    <img
+                      src={first.coverUrl}
+                      alt={saga}
+                      className="w-full h-full object-cover group-hover:scale-105 transition"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
+                      Aucun visuel
+                    </div>
+                  )}
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />
+                <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-white">
+                  <div className="font-semibold truncate">{saga}</div>
+                  <span className="text-xs bg-white/15 px-2 py-0.5 rounded-full">
+                    {list.length}
                   </span>
-                  <h2 className="text-lg sm:text-xl font-semibold">
-                    {key} <span className="text-muted-foreground">({list.length})</span>
-                  </h2>
-                </button>
-
-                {/* Contenu de section */}
-                {isOpen && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
-                    {list.map((game) => (
-                      <GameCard
-                        key={game.id}
-                        game={game}
-                        onEdit={handleEditGame}
-                        onDelete={handleDeleteGame}
-                        onView={handleViewGame}
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
+                </div>
+              </button>
             );
           })}
         </div>
+
+        {/* === SECTION ACTIVE UNIQUEMENT (si sélectionnée) === */}
+        {activeSection && (
+          <div className="space-y-4 mb-10">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg sm:text-xl font-semibold">{activeSection}</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setActiveSection(null)}
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Retour aux sagas
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
+              {(() => {
+                const entry = groups.find(([s]) => s === activeSection);
+                const list = entry ? entry[1] : [];
+                return list.map((game) => (
+                  <GameCard
+                    key={game.id}
+                    game={game}
+                    onEdit={handleEditGame}
+                    onDelete={handleDeleteGame}
+                    onView={handleViewGame}
+                  />
+                ));
+              })()}
+            </div>
+          </div>
+        )}
 
         {/* Dialog : Formulaire Ajouter/Modifier */}
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
@@ -563,9 +450,7 @@ const Index = () => {
                   <h3 className="text-xl font-bold">{viewingGame.title}</h3>
                   <div className="text-sm text-muted-foreground">
                     {viewingGame.platform && <div>Plateforme : {viewingGame.platform}</div>}
-                    {typeof viewingGame.rating === "number" && (
-                      <div>Note : {viewingGame.rating}/5</div>
-                    )}
+                    {typeof viewingGame.rating === "number" && <div>Note : {viewingGame.rating}/5</div>}
                     {viewingGame.saga && <div>Saga : {viewingGame.saga}</div>}
                   </div>
                   {!!viewingGame.genres?.length && (
@@ -577,9 +462,7 @@ const Index = () => {
                       ))}
                     </div>
                   )}
-                  {viewingGame.whyLiked && (
-                    <p className="text-sm leading-relaxed">{viewingGame.whyLiked}</p>
-                  )}
+                  {viewingGame.whyLiked && <p className="text-sm leading-relaxed">{viewingGame.whyLiked}</p>}
                 </div>
               </div>
             )}
