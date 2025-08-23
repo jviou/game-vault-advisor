@@ -1,25 +1,15 @@
-// src/pages/Index.tsx
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Gamepad2, MoreVertical, Download, Upload } from "lucide-react";
+import { Gamepad2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { Link } from "react-router-dom";
+
 import GameCard from "@/components/GameCard";
 import { GameForm } from "@/components/GameForm";
 import { SearchAndFilters, Filters } from "@/components/SearchAndFilters";
 import type { GameDTO } from "@/lib/api";
 import { listGames, createGame, updateGame, deleteGame } from "@/lib/api";
-import { useToast } from "@/hooks/use-toast";
-import { Link } from "react-router-dom";
-
-// (petit utilitaire pour créer l’URL /s/:slug)
-const slug = (s: string) =>
-  (s || "JEUX")
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .replace(/[^A-Z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .toLowerCase();
 
 const Index = () => {
   const [games, setGames] = useState<GameDTO[]>([]);
@@ -35,50 +25,6 @@ const Index = () => {
     sortBy: "createdAt",
     sortOrder: "desc",
   });
-
-  // Import / Export JSON (menu)
-  const handleExportAll = () => {
-    try {
-      const data = JSON.stringify(games, null, 2);
-      const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      const date = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `game-vault_${date}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast({ title: "Export JSON", description: "La collection a été exportée." });
-    } catch (e: any) {
-      toast({
-        title: "Export échoué",
-        description: e?.message || "Impossible d’exporter le JSON.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleImportAll = async (file: File) => {
-    try {
-      const text = await file.text();
-      const arr = JSON.parse(text) as GameDTO[];
-      // Import simple : on crée un par un (à adapter si tu veux écraser/vider avant)
-      for (const g of arr) {
-        const { id, createdAt, updatedAt, ...payload } = g as any;
-        await createGame(payload);
-      }
-      toast({ title: "Import JSON", description: "Import terminé." });
-      refresh();
-    } catch (e: any) {
-      toast({
-        title: "Import échoué",
-        description: e?.message || "Impossible d’importer ce JSON.",
-        variant: "destructive",
-      });
-    }
-  };
 
   async function refresh() {
     try {
@@ -97,18 +43,60 @@ const Index = () => {
     refresh();
   }, []);
 
-  // On garde les filtres de recherche pour que la liste de vignettes obéisse à la recherche/plateforme/note/genres
+  // --- Sagas présentes + vignette (on prend la 1re jaquette trouvée) ---
+  const sagaTiles = useMemo(() => {
+    // Map saga -> premier jeu rencontré
+    const map = new Map<string, GameDTO>();
+
+    // 1) Les sagas nommées
+    for (const g of games) {
+      const key = (g.saga ?? "").trim();
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, g);
+    }
+
+    // 2) Le groupe "JEUX" = sans saga
+    const firstNoSaga = games.find((g) => !g.saga || !g.saga.trim());
+    if (firstNoSaga) map.set("JEUX", firstNoSaga);
+
+    // Tri alpha, "JEUX" en premier
+    const entries = Array.from(map.entries()).sort(([a], [b]) => {
+      if (a === "JEUX") return -1;
+      if (b === "JEUX") return 1;
+      return a.localeCompare(b);
+    });
+
+    return entries.map(([saga, sample]) => ({
+      saga,
+      count:
+        saga === "JEUX"
+          ? games.filter((g) => !g.saga || !g.saga.trim()).length
+          : games.filter(
+              (g) => (g.saga ?? "").trim().toLowerCase() === saga.toLowerCase()
+            ).length,
+      cover: sample.coverUrl || "",
+    }));
+  }, [games]);
+
+  // --- Filtres (pour la barre de recherche si tu veux “pré-filtrer” sur /) ---
   const filteredGames = useMemo(() => {
     let filtered = games.filter((game) => {
-      if (filters.search && !game.title?.toLowerCase().includes(filters.search.toLowerCase()))
+      if (
+        filters.search &&
+        !game.title?.toLowerCase().includes(filters.search.toLowerCase())
+      )
         return false;
-      if (filters.genres.length > 0 && !filters.genres.some((g) => (game.genres || []).includes(g)))
+      if (
+        filters.genres.length > 0 &&
+        !filters.genres.some((g) => (game.genres || []).includes(g))
+      )
         return false;
       if ((game.rating ?? 0) < filters.minRating) return false;
       if (filters.platform && game.platform !== filters.platform) return false;
       return true;
     });
 
+    // tri
     filtered.sort((a, b) => {
       let aValue: any, bValue: any;
       switch (filters.sortBy) {
@@ -128,43 +116,45 @@ const Index = () => {
           aValue = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           bValue = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       }
-      return filters.sortOrder === "asc" ? (aValue < bValue ? -1 : aValue > bValue ? 1 : 0)
-                                         : (aValue > bValue ? -1 : aValue < bValue ? 1 : 0);
+      return filters.sortOrder === "asc"
+        ? aValue < bValue
+          ? -1
+          : aValue > bValue
+          ? 1
+          : 0
+        : aValue > bValue
+        ? -1
+        : aValue < bValue
+        ? 1
+        : 0;
     });
 
     return filtered;
   }, [games, filters]);
 
-  // Construit les groupes : "JEUX" (= sans saga) + chaque saga
-  const groups = useMemo(() => {
-    const map = new Map<string, GameDTO[]>();
-    for (const g of filteredGames) {
-      const key = (g.saga?.trim() || "").toUpperCase();
-      const groupName = key || "JEUX";
-      if (!map.has(groupName)) map.set(groupName, []);
-      map.get(groupName)!.push(g);
-    }
-    // JEUX en premier, puis sagas triées alpha
-    const entries = Array.from(map.entries());
-    const first = entries.filter(([k]) => k === "JEUX");
-    const rest = entries.filter(([k]) => k !== "JEUX").sort(([a], [b]) => a.localeCompare(b));
-    return [...first, ...rest];
-  }, [filteredGames]);
-
   const availablePlatforms = useMemo(() => {
-    return Array.from(new Set(games.map((g) => g.platform).filter(Boolean) as string[])).sort();
+    return Array.from(
+      new Set(games.map((g) => g.platform).filter(Boolean) as string[])
+    ).sort();
   }, [games]);
 
+  const availableSagas = useMemo(() => {
+    return Array.from(
+      new Set(games.map((g) => g.saga?.trim()).filter(Boolean) as string[])
+    ).sort();
+  }, [games]);
+
+  // --- CRUD ---
   const handleSaveGame = async (
     gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
     try {
       if (editingGame?.id != null) {
         await updateGame(editingGame.id, gameData);
-        toast({ title: "Jeu mis à jour", description: `${gameData.title} a été mis à jour.` });
+        toast({ title: "Jeu mis à jour", description: `${gameData.title} mis à jour.` });
       } else {
         await createGame(gameData);
-        toast({ title: "Jeu ajouté", description: `${gameData.title} a été ajouté à votre collection.` });
+        toast({ title: "Jeu ajouté", description: `${gameData.title} ajouté.` });
       }
       setIsFormOpen(false);
       setEditingGame(null);
@@ -173,6 +163,31 @@ const Index = () => {
       toast({
         title: "Erreur",
         description: e?.message || "Échec de l’enregistrement.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEditGame = (game: GameDTO) => {
+    setEditingGame(game);
+    setIsFormOpen(true);
+  };
+
+  const handleDeleteGame = async (id: number) => {
+    const game = games.find((g) => g.id === id);
+    if (!confirm(`Supprimer “${game?.title ?? "ce jeu"}” ?`)) return;
+    try {
+      await deleteGame(id);
+      toast({
+        title: "Jeu supprimé",
+        description: `${game?.title ?? "Jeu"} supprimé.`,
+        variant: "destructive",
+      });
+      await refresh();
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e?.message || "Échec de la suppression.",
         variant: "destructive",
       });
     }
@@ -197,49 +212,19 @@ const Index = () => {
             </div>
           </div>
 
-          {/* Boutons à droite : menu Import/Export + Ajouter */}
-          <div className="flex items-center gap-2">
-            {/* Menu simple (Importer/Exporter) */}
-            <div className="relative group">
-              <Button variant="outline" className="gap-2">
-                <MoreVertical className="w-4 h-4" />
-              </Button>
-              <div className="hidden group-hover:block absolute right-0 mt-2 w-44 rounded-md border bg-popover p-1 shadow-md z-20">
-                <button
-                  className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded hover:bg-muted"
-                  onClick={handleExportAll}
-                >
-                  <Download className="w-4 h-4" /> Exporter JSON
-                </button>
-                <label className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded hover:bg-muted cursor-pointer">
-                  <Upload className="w-4 h-4" /> Importer JSON
-                  <input
-                    type="file"
-                    accept="application/json"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleImportAll(f);
-                    }}
-                  />
-                </label>
-              </div>
-            </div>
-
-            <Button
-              onClick={() => {
-                setEditingGame(null);
-                setIsFormOpen(true);
-              }}
-              className="gap-2 shadow-glow-primary"
-            >
-              <Plus className="w-4 h-4" />
-              Ajouter
-            </Button>
-          </div>
+          <Button
+            onClick={() => {
+              setEditingGame(null);
+              setIsFormOpen(true);
+            }}
+            className="gap-2 shadow-glow-primary w-full sm:w-auto"
+          >
+            <Plus className="w-4 h-4" />
+            Ajouter
+          </Button>
         </div>
 
-        {/* Barre de recherche / filtres */}
+        {/* Recherche/Filtres */}
         <div className="mb-6 sm:mb-8">
           <SearchAndFilters
             filters={filters}
@@ -248,61 +233,59 @@ const Index = () => {
           />
         </div>
 
-        {/* === Grille de vignettes (JEUX + Sagas) === */}
-        {groups.length === 0 ? (
-          <div className="text-center py-12">
-            <h3 className="text-lg sm:text-xl font-semibold mb-2">
-              {games.length === 0 ? "Aucun jeu" : "Aucun résultat"}
-            </h3>
-            {games.length === 0 && (
-              <Button
-                onClick={() => {
-                  setEditingGame(null);
-                  setIsFormOpen(true);
-                }}
-                className="mt-4 gap-2"
-              >
-                <Plus className="w-4 h-4" /> Ajouter un jeu
-              </Button>
-            )}
-          </div>
-        ) : (
+        {/* ---- Grille des vignettes de sagas (inclut “JEUX”) ---- */}
+        <div className="space-y-6">
+          <h2 className="text-lg sm:text-xl font-semibold">Sagas</h2>
+
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4 sm:gap-6">
-            {groups.map(([saga, list]) => {
-              const first = list.find((g) => !!g.coverUrl) || list[0];
-              return (
-                <Link
-                  key={saga}
-                  to={`/s/${slug(saga)}`}
-                  className="group relative rounded-xl overflow-hidden bg-muted/30 border border-border hover:shadow-lg transition focus:outline-none"
-                  title={`Voir ${saga}`}
-                >
-                  <div className="aspect-[3/4] w-full overflow-hidden bg-black/20">
-                    {first?.coverUrl ? (
-                      <img
-                        src={first.coverUrl}
-                        alt={saga}
-                        className="w-full h-full object-cover group-hover:scale-105 transition"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
-                        Aucun visuel
-                      </div>
-                    )}
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />
-                  <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-white">
-                    <div className="font-semibold truncate">{saga}</div>
-                    <span className="text-xs bg-white/15 px-2 py-0.5 rounded-full">{list.length}</span>
-                  </div>
-                </Link>
-              );
-            })}
+            {sagaTiles.map(({ saga, cover, count }) => (
+              <Link
+                key={saga}
+                to={`/s/${encodeURIComponent(saga)}`} // <-- IMPORTANT
+                className="group block rounded-xl overflow-hidden bg-card shadow hover:shadow-lg transition"
+                title={saga}
+              >
+                <div className="aspect-[3/4] w-full overflow-hidden bg-muted">
+                  {cover ? (
+                    <img
+                      src={cover}
+                      alt={saga}
+                      className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+                      Pas de jaquette
+                    </div>
+                  )}
+                </div>
+                <div className="px-3 py-2">
+                  <div className="font-semibold truncate">{saga}</div>
+                  <div className="text-xs text-muted-foreground">{count} jeu(x)</div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Optionnel : si tu veux garder un aperçu des jeux filtrés sur la page d’accueil */}
+        {filteredGames.length > 0 && (
+          <div className="mt-10 space-y-3">
+            <h2 className="text-lg sm:text-xl font-semibold">Aperçu (recherche)</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
+              {filteredGames.slice(0, 10).map((g) => (
+                <GameCard
+                  key={g.id}
+                  game={g}
+                  onEdit={handleEditGame}
+                  onDelete={handleDeleteGame}
+                  onView={() => {}}
+                />
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Dialog : Formulaire Ajouter/Modifier */}
+        {/* Dialog : Ajouter/Modifier */}
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <GameForm
@@ -312,9 +295,7 @@ const Index = () => {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              availableSagas={Array.from(
-                new Set(games.map((g) => g.saga?.trim()).filter(Boolean) as string[])
-              ).sort()}
+              availableSagas={availableSagas}
             />
           </DialogContent>
         </Dialog>
