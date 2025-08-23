@@ -1,6 +1,13 @@
 // src/pages/Index.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Gamepad2, Download, Upload } from "lucide-react";
+import {
+  Plus,
+  Gamepad2,
+  Download,
+  Upload,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import GameCard from "@/components/GameCard";
@@ -9,6 +16,8 @@ import { SearchAndFilters, Filters } from "@/components/SearchAndFilters";
 import type { GameDTO } from "@/lib/api";
 import { listGames, createGame, updateGame, deleteGame } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+
+const NO_SAGA_LABEL = "Jeux"; // libellé du groupe "sans saga"
 
 const Index = () => {
   const [games, setGames] = useState<GameDTO[]>([]);
@@ -29,7 +38,19 @@ const Index = () => {
   // Affichage groupé par saga
   const [groupBySaga, setGroupBySaga] = useState(true);
 
-  // input caché pour l'import
+  // État des groupes repliés (persisté)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("gv_collapsed") || "{}");
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem("gv_collapsed", JSON.stringify(collapsed));
+  }, [collapsed]);
+
+  // input caché pour l'import JSON
   const importInputRef = useRef<HTMLInputElement>(null);
 
   async function refresh() {
@@ -116,20 +137,46 @@ const Index = () => {
     ).sort();
   }, [games]);
 
-  // Groupes par saga
+  // Groupes par saga, avec "Jeux" d'abord et repli par défaut
   const groups = useMemo(() => {
-    if (!groupBySaga) return [["Tous les jeux", filteredGames] as const];
+    if (!groupBySaga) return [[ "Tous les jeux", filteredGames ] as const];
 
     const map = new Map<string, GameDTO[]>();
     for (const g of filteredGames) {
-      const key = g.saga?.trim() || "Jeux";
+      const key = g.saga?.trim() || NO_SAGA_LABEL;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(g);
     }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+
+    const entries = Array.from(map.entries());
+    // 1) "Jeux" en premier ; 2) le reste trié A→Z
+    entries.sort(([a], [b]) => {
+      if (a === NO_SAGA_LABEL && b !== NO_SAGA_LABEL) return -1;
+      if (b === NO_SAGA_LABEL && a !== NO_SAGA_LABEL) return 1;
+      return a.localeCompare(b);
+    });
+
+    return entries as ReadonlyArray<readonly [string, GameDTO[]]>;
   }, [filteredGames, groupBySaga]);
 
-  // --- Export JSON de toute la collection ---
+  const isCollapsed = (key: string) =>
+    collapsed[key] ?? (key === NO_SAGA_LABEL); // "Jeux" replié par défaut
+
+  const toggleGroup = (key: string) =>
+    setCollapsed((p) => ({ ...p, [key]: !isCollapsed(key) }));
+
+  const collapseAll = () => {
+    const all: Record<string, boolean> = {};
+    for (const [k] of groups) all[k] = true;
+    setCollapsed(all);
+  };
+  const expandAll = () => {
+    const all: Record<string, boolean> = {};
+    for (const [k] of groups) all[k] = false;
+    setCollapsed(all);
+  };
+
+  // --- Export JSON ---
   const handleExportAll = () => {
     try {
       const data = JSON.stringify(games, null, 2);
@@ -153,18 +200,15 @@ const Index = () => {
     }
   };
 
-  // --- Import JSON (remplace la base par le fichier) ---
+  // --- Import JSON (remplace la base) ---
+  const importInputRef = useRef<HTMLInputElement>(null);
   const handleImportFile = async (file: File) => {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
       if (!Array.isArray(data)) throw new Error("Invalid JSON format (array expected)");
 
-      if (
-        !confirm(
-          "Importer ce fichier va remplacer votre collection actuelle. Continuer ?"
-        )
-      ) {
+      if (!confirm("Importer ce fichier va remplacer votre collection actuelle. Continuer ?")) {
         return;
       }
 
@@ -187,11 +231,7 @@ const Index = () => {
         });
       }
 
-      toast({
-        title: "Import réussi",
-        description: `${data.length} jeux importés.`,
-      });
-
+      toast({ title: "Import réussi", description: `${data.length} jeux importés.` });
       await refresh();
     } catch (e: any) {
       toast({
@@ -200,7 +240,6 @@ const Index = () => {
         variant: "destructive",
       });
     } finally {
-      // reset la valeur pour permettre de réimporter le même fichier si besoin
       if (importInputRef.current) importInputRef.current.value = "";
     }
   };
@@ -333,15 +372,28 @@ const Index = () => {
           />
         </div>
 
-        {/* Toggle regrouper par saga */}
-        <div className="flex items-center gap-2 mb-6">
-          <label className="text-sm text-muted-foreground">Regrouper par saga</label>
-          <input
-            type="checkbox"
-            checked={groupBySaga}
-            onChange={(e) => setGroupBySaga(e.target.checked)}
-            className="h-4 w-4 accent-primary"
-          />
+        {/* Options d'affichage */}
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={groupBySaga}
+              onChange={(e) => setGroupBySaga(e.target.checked)}
+              className="h-4 w-4 accent-primary"
+            />
+            Regrouper par saga
+          </label>
+
+          {groupBySaga && (
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={collapseAll}>
+                Tout réduire
+              </Button>
+              <Button variant="outline" size="sm" onClick={expandAll}>
+                Tout développer
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Grilles */}
@@ -364,30 +416,44 @@ const Index = () => {
           </div>
         ) : (
           <div className="space-y-8">
-            {groups.map(([saga, list]) => (
-              <section key={saga}>
-                {groupBySaga && (
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-lg sm:text-xl font-semibold">
-                      {saga}{" "}
-                      <span className="text-muted-foreground">({list.length})</span>
-                    </h2>
-                  </div>
-                )}
+            {groups.map(([saga, list]) => {
+              const collapsedNow = groupBySaga ? isCollapsed(saga) : false;
+              return (
+                <section key={saga}>
+                  {groupBySaga && (
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(saga)}
+                      className="w-full flex items-center justify-between mb-3 text-left"
+                    >
+                      <div className="flex items-center gap-2">
+                        {collapsedNow ? (
+                          <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                        )}
+                        <h2 className="text-lg sm:text-xl font-semibold">{saga}</h2>
+                      </div>
+                      <span className="text-muted-foreground text-sm">({list.length})</span>
+                    </button>
+                  )}
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
-                  {list.map((game) => (
-                    <GameCard
-                      key={game.id}
-                      game={game}
-                      onEdit={handleEditGame}
-                      onDelete={handleDeleteGame}
-                      onView={handleViewGame}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
+                  {!collapsedNow && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
+                      {list.map((game) => (
+                        <GameCard
+                          key={game.id}
+                          game={game}
+                          onEdit={handleEditGame}
+                          onDelete={handleDeleteGame}
+                          onView={handleViewGame}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
           </div>
         )}
 
