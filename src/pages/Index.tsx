@@ -1,6 +1,6 @@
 // src/pages/Index.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Gamepad2, Upload, Download, MoreVertical } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Gamepad2, MoreVertical, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import GameCard from "@/components/GameCard";
@@ -11,10 +11,9 @@ import { listGames, createGame, updateGame, deleteGame } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import {
   DropdownMenu,
-  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
 const Index = () => {
@@ -23,8 +22,6 @@ const Index = () => {
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
   const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
   const { toast } = useToast();
-
-  const importInputRef = useRef<HTMLInputElement>(null);
 
   const [filters, setFilters] = useState<Filters>({
     search: "",
@@ -35,8 +32,9 @@ const Index = () => {
     sortOrder: "desc",
   });
 
-  // Affichage groupé par saga
+  // Groupage par saga
   const [groupBySaga, setGroupBySaga] = useState(true);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   async function refresh() {
     try {
@@ -122,7 +120,7 @@ const Index = () => {
     ).sort();
   }, [games]);
 
-  // Groupes par saga
+  // Groupes avec "Jeux" en premier
   const groups = useMemo(() => {
     if (!groupBySaga) return [["Tous les jeux", filteredGames] as const];
 
@@ -132,14 +130,32 @@ const Index = () => {
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(g);
     }
-    return Array.from(map.entries()).sort(([a], [b]) => {
+
+    const result = Array.from(map.entries()).sort(([a], [b]) => {
       if (a === "Jeux") return -1; // "Jeux" toujours en premier
       if (b === "Jeux") return 1;
       return a.localeCompare(b);
     });
+
+    // Initialiser openGroups (Jeux ouvert, autres fermés par défaut)
+    const initialOpen: Record<string, boolean> = {};
+    for (const [saga] of result) {
+      initialOpen[saga] = saga === "Jeux";
+    }
+    setOpenGroups((prev) => ({ ...initialOpen, ...prev }));
+
+    return result;
   }, [filteredGames, groupBySaga]);
 
-  // --- Export JSON de toute la collection ---
+  // --- Toggle ouverture/fermeture d'une section
+  const toggleGroup = (key: string) => {
+    setOpenGroups((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  // --- Export JSON
   const handleExportAll = () => {
     try {
       const data = JSON.stringify(games, null, 2);
@@ -163,36 +179,36 @@ const Index = () => {
     }
   };
 
-  // --- Import JSON ---
-  const handleImportFile = async (file: File) => {
-    try {
-      const text = await file.text();
-      const importedGames: GameDTO[] = JSON.parse(text);
-
-      for (const g of importedGames) {
-        await createGame({
-          title: g.title,
-          coverUrl: g.coverUrl,
-          rating: g.rating,
-          genres: g.genres || [],
-          whyLiked: g.whyLiked,
-          platform: g.platform,
-          saga: g.saga,
+  // --- Import JSON
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string) as GameDTO[];
+        for (const game of data) {
+          await createGame({
+            title: game.title,
+            coverUrl: game.coverUrl,
+            rating: game.rating,
+            genres: game.genres,
+            whyLiked: game.whyLiked,
+            platform: game.platform,
+            saga: game.saga,
+          });
+        }
+        toast({ title: "Import réussi", description: `${data.length} jeux importés.` });
+        await refresh();
+      } catch (err: any) {
+        toast({
+          title: "Import échoué",
+          description: err?.message || "Le fichier JSON est invalide.",
+          variant: "destructive",
         });
       }
-
-      await refresh();
-      toast({
-        title: "Import réussi",
-        description: `${importedGames.length} jeux importés.`,
-      });
-    } catch (e: any) {
-      toast({
-        title: "Import échoué",
-        description: e?.message || "Impossible d’importer le JSON.",
-        variant: "destructive",
-      });
-    }
+    };
+    reader.readAsText(file);
   };
 
   const handleSaveGame = async (
@@ -268,14 +284,13 @@ const Index = () => {
             </div>
           </div>
 
-          <div className="flex gap-2 w-full sm:w-auto items-center justify-end">
-            {/* Bouton Ajouter */}
+          <div className="flex gap-2 w-full sm:w-auto items-center">
             <Button
               onClick={() => {
                 setEditingGame(null);
                 setIsFormOpen(true);
               }}
-              className="gap-2 shadow-glow-primary"
+              className="gap-2 shadow-glow-primary w-full sm:w-auto"
             >
               <Plus className="w-4 h-4" />
               Ajouter
@@ -284,37 +299,27 @@ const Index = () => {
             {/* Menu Import/Export */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="ml-2">
+                <Button variant="outline" size="icon">
                   <MoreVertical className="w-5 h-5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => importInputRef.current?.click()}
-                  className="gap-2"
-                >
-                  <Upload className="w-4 h-4" />
-                  Importer JSON
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleExportAll} className="gap-2">
-                  <Download className="w-4 h-4" />
+                <DropdownMenuItem onClick={handleExportAll}>
                   Exporter JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <label className="cursor-pointer w-full">
+                    Importer JSON
+                    <input
+                      type="file"
+                      accept="application/json"
+                      onChange={handleImport}
+                      className="hidden"
+                    />
+                  </label>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-
-            {/* Input caché pour import */}
-            <input
-              ref={importInputRef}
-              type="file"
-              accept="application/json"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void handleImportFile(file);
-              }}
-            />
           </div>
         </div>
 
@@ -361,25 +366,35 @@ const Index = () => {
             {groups.map(([saga, list]) => (
               <section key={saga}>
                 {groupBySaga && (
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-lg sm:text-xl font-semibold">
+                  <div
+                    className="flex items-center justify-between mb-3 cursor-pointer select-none"
+                    onClick={() => toggleGroup(saga)}
+                  >
+                    <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2">
+                      {openGroups[saga] ? (
+                        <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4" />
+                      )}
                       {saga}{" "}
                       <span className="text-muted-foreground">({list.length})</span>
                     </h2>
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
-                  {list.map((game) => (
-                    <GameCard
-                      key={game.id}
-                      game={game}
-                      onEdit={handleEditGame}
-                      onDelete={handleDeleteGame}
-                      onView={handleViewGame}
-                    />
-                  ))}
-                </div>
+                {openGroups[saga] && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
+                    {list.map((game) => (
+                      <GameCard
+                        key={game.id}
+                        game={game}
+                        onEdit={handleEditGame}
+                        onDelete={handleDeleteGame}
+                        onView={handleViewGame}
+                      />
+                    ))}
+                  </div>
+                )}
               </section>
             ))}
           </div>
