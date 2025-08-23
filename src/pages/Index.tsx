@@ -1,20 +1,20 @@
 // src/pages/Index.tsx
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Gamepad2, Download, Upload, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Gamepad2, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import GameCard from "@/components/GameCard";
 import { GameForm } from "@/components/GameForm";
 import { SearchAndFilters, Filters } from "@/components/SearchAndFilters";
 import type { GameDTO } from "@/lib/api";
 import { listGames, createGame, updateGame, deleteGame } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const Index = () => {
   const [games, setGames] = useState<GameDTO[]>([]);
@@ -32,12 +32,7 @@ const Index = () => {
     sortOrder: "desc",
   });
 
-  const [groupBySaga, setGroupBySaga] = useState(true);
-
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  const toggleGroup = (saga: string) => {
-    setOpenGroups((prev) => ({ ...prev, [saga]: !prev[saga] }));
-  };
+  const [groupBySaga] = useState(true);
 
   async function refresh() {
     try {
@@ -56,6 +51,7 @@ const Index = () => {
     refresh();
   }, []);
 
+  // --- Filtrage + tri
   const filteredGames = useMemo(() => {
     let filtered = games.filter((game) => {
       if (
@@ -108,33 +104,22 @@ const Index = () => {
     return filtered;
   }, [games, filters]);
 
-  const availablePlatforms = useMemo(() => {
-    return Array.from(
-      new Set(games.map((g) => g.platform).filter(Boolean) as string[])
-    ).sort();
-  }, [games]);
-
-  const availableSagas = useMemo(() => {
-    return Array.from(
-      new Set(games.map((g) => g.saga?.trim()).filter(Boolean) as string[])
-    ).sort();
-  }, [games]);
-
+  // --- Groupes (sagas)
   const groups = useMemo(() => {
     if (!groupBySaga) return [["Jeux", filteredGames] as const];
+
     const map = new Map<string, GameDTO[]>();
     for (const g of filteredGames) {
       const key = g.saga?.trim() || "Jeux";
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(g);
     }
-    return Array.from(map.entries()).sort(([a], [b]) => {
-      if (a === "Jeux") return -1;
-      if (b === "Jeux") return 1;
-      return a.localeCompare(b);
-    });
+    return Array.from(map.entries()).sort(([a], [b]) =>
+      a.localeCompare(b)
+    );
   }, [filteredGames, groupBySaga]);
 
+  // --- Import/Export JSON
   const handleExportAll = () => {
     try {
       const data = JSON.stringify(games, null, 2);
@@ -148,7 +133,10 @@ const Index = () => {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast({ title: "Export JSON", description: "La collection a été exportée." });
+      toast({
+        title: "Export JSON",
+        description: "La collection a été exportée.",
+      });
     } catch (e: any) {
       toast({
         title: "Export échoué",
@@ -158,36 +146,35 @@ const Index = () => {
     }
   };
 
-  const handleImportAll = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const json = JSON.parse(e.target?.result as string) as GameDTO[];
-        for (const g of json) {
-          await createGame({
-            title: g.title,
-            coverUrl: g.coverUrl,
-            rating: g.rating,
-            genres: g.genres || [],
-            whyLiked: g.whyLiked,
-            platform: g.platform,
-            saga: g.saga,
-            finishedAt: g.finishedAt,
-          });
+  const handleImportAll = async () => {
+    try {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "application/json";
+      input.onchange = async (e: any) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const text = await file.text();
+        const imported: GameDTO[] = JSON.parse(text);
+
+        for (const g of imported) {
+          const { id, createdAt, updatedAt, ...rest } = g;
+          await createGame(rest);
         }
-        toast({ title: "Import réussi", description: `${json.length} jeux importés.` });
-        await refresh();
-      } catch (err) {
         toast({
-          title: "Import échoué",
-          description: "Le fichier JSON est invalide.",
-          variant: "destructive",
+          title: "Import réussi",
+          description: `${imported.length} jeux importés.`,
         });
-      }
-    };
-    reader.readAsText(file);
+        await refresh();
+      };
+      input.click();
+    } catch (e: any) {
+      toast({
+        title: "Import échoué",
+        description: e?.message || "Impossible d’importer le JSON.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSaveGame = async (
@@ -196,16 +183,8 @@ const Index = () => {
     try {
       if (editingGame?.id != null) {
         await updateGame(editingGame.id, gameData);
-        toast({
-          title: "Jeu mis à jour",
-          description: `${gameData.title} a été mis à jour.`,
-        });
       } else {
         await createGame(gameData);
-        toast({
-          title: "Jeu ajouté",
-          description: `${gameData.title} a été ajouté à votre collection.`,
-        });
       }
       setIsFormOpen(false);
       setEditingGame(null);
@@ -219,155 +198,95 @@ const Index = () => {
     }
   };
 
-  const handleEditGame = (game: GameDTO) => {
-    setEditingGame(game);
-    setIsFormOpen(true);
-  };
-  const handleDeleteGame = async (id: number) => {
-    const game = games.find((g) => g.id === id);
-    if (!confirm(`Supprimer “${game?.title ?? "ce jeu"}” ?`)) return;
-    try {
-      await deleteGame(id);
-      toast({
-        title: "Jeu supprimé",
-        description: `${game?.title ?? "Jeu"} supprimé.`,
-        variant: "destructive",
-      });
-      await refresh();
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e?.message || "Échec de la suppression.",
-        variant: "destructive",
-      });
-    }
-  };
-  const handleViewGame = (game: GameDTO) => setViewingGame(game);
-
   return (
     <div className="min-h-screen bg-gradient-hero">
-      <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+      <div className="container mx-auto px-4 py-6">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 sm:mb-8 gap-4">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-gradient-primary rounded-lg shadow-glow-primary">
-              <Gamepad2 className="w-6 h-6 sm:w-8 sm:h-8 text-primary-foreground" />
+              <Gamepad2 className="w-8 h-8 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
                 Ma Collection
               </h1>
-              <p className="text-sm sm:text-base text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 {games.length} {games.length > 1 ? "jeux" : "jeu"}
               </p>
             </div>
           </div>
 
-          <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-3">
             <Button
               onClick={() => {
                 setEditingGame(null);
                 setIsFormOpen(true);
               }}
-              className="gap-2 shadow-glow-primary w-full sm:w-auto"
+              className="gap-2 shadow-glow-primary"
             >
               <Plus className="w-4 h-4" />
               Ajouter
             </Button>
 
-            {/* Menu Import/Export */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline">⋮</Button>
+                <Button variant="outline" size="icon">
+                  <MoreVertical className="h-5 w-5" />
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleExportAll}>
-                  <Download className="w-4 h-4 mr-2" /> Exporter JSON
+                <DropdownMenuItem onClick={handleImportAll}>
+                  Importer JSON
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() =>
-                    document.getElementById("import-json")?.click()
-                  }
-                >
-                  <Upload className="w-4 h-4 mr-2" /> Importer JSON
+                <DropdownMenuItem onClick={handleExportAll}>
+                  Exporter JSON
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <input
-              id="import-json"
-              type="file"
-              accept="application/json"
-              onChange={handleImportAll}
-              className="hidden"
-            />
           </div>
         </div>
 
         {/* Search + Filtres */}
-        <div className="mb-3 sm:mb-4">
+        <div className="mb-8">
           <SearchAndFilters
             filters={filters}
             onFiltersChange={setFilters}
-            availablePlatforms={availablePlatforms}
+            availablePlatforms={Array.from(
+              new Set(games.map((g) => g.platform).filter(Boolean) as string[])
+            ).sort()}
           />
         </div>
 
-        {/* Toggle regrouper par saga */}
-        <div className="flex items-center gap-2 mb-6">
-          <label className="text-sm text-muted-foreground">Regrouper par saga</label>
-          <input
-            type="checkbox"
-            checked={groupBySaga}
-            onChange={(e) => setGroupBySaga(e.target.checked)}
-            className="h-4 w-4 accent-primary"
-          />
-        </div>
-
-        {/* Grilles groupées avec accordéon */}
-        <div className="space-y-4">
-          {groups.map(([saga, list]) => (
-            <div
-              key={saga}
-              className="rounded-lg border border-border bg-card shadow-md"
-            >
-              {/* Header cliquable */}
-              <button
-                onClick={() => toggleGroup(saga)}
-                className="w-full flex justify-between items-center px-4 py-3 text-left hover:bg-muted transition-colors"
-              >
-                <span className="flex items-center gap-2 font-semibold">
-                  {openGroups[saga] ? (
-                    <ChevronDown className="w-4 h-4 transition-transform" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 transition-transform" />
-                  )}
-                  {saga} ({list.length})
-                </span>
-              </button>
-
-              {/* Contenu avec animation */}
-              <div
-                className={`transition-all duration-300 ${
-                  openGroups[saga] ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
-                } overflow-hidden`}
-              >
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 p-4">
+        {/* Sections style Netflix */}
+        {groups.length === 0 ? (
+          <div className="text-center py-12">Aucun jeu trouvé.</div>
+        ) : (
+          <div className="space-y-10">
+            {groups.map(([saga, list]) => (
+              <section key={saga}>
+                <h2 className="text-xl font-bold mb-3">
+                  {saga}{" "}
+                  <span className="text-muted-foreground">({list.length})</span>
+                </h2>
+                <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-2">
                   {list.map((game) => (
-                    <GameCard
-                      key={game.id}
-                      game={game}
-                      onEdit={handleEditGame}
-                      onDelete={handleDeleteGame}
-                      onView={handleViewGame}
-                    />
+                    <div key={game.id} className="flex-shrink-0 w-40 sm:w-48">
+                      <GameCard
+                        game={game}
+                        onEdit={setEditingGame}
+                        onDelete={() => deleteGame(game.id)}
+                        onView={() => setViewingGame(game)}
+                      />
+                    </div>
                   ))}
                 </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              </section>
+            ))}
+          </div>
+        )}
 
-        {/* Dialog : Formulaire Ajouter/Modifier */}
+        {/* Dialog Form */}
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <GameForm
@@ -377,69 +296,10 @@ const Index = () => {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              availableSagas={availableSagas}
+              availableSagas={Array.from(
+                new Set(games.map((g) => g.saga?.trim()).filter(Boolean) as string[])
+              ).sort()}
             />
-          </DialogContent>
-        </Dialog>
-
-        {/* Dialog : Voir un jeu */}
-        <Dialog
-          open={!!viewingGame}
-          onOpenChange={(open) => !open && setViewingGame(null)}
-        >
-          <DialogContent className="max-w-xl w-[95vw] sm:w-auto max-h-[90vh] p-0 overflow-y-auto">
-            {viewingGame && (
-              <div className="grid grid-cols-1 sm:grid-cols-2">
-                {/* Cover */}
-                <div className="bg-black/20 p-4 flex items-center justify-center">
-                  {viewingGame.coverUrl ? (
-                    <img
-                      src={viewingGame.coverUrl}
-                      alt={viewingGame.title}
-                      className="rounded-lg w-full h-auto sm:max-h-none max-h-[40vh] object-contain"
-                    />
-                  ) : (
-                    <div className="w-full aspect-[3/4] rounded-lg bg-muted flex items-center justify-center">
-                      Pas de jaquette
-                    </div>
-                  )}
-                </div>
-
-                {/* Infos */}
-                <div className="p-4 space-y-3">
-                  <h3 className="text-xl font-bold">{viewingGame.title}</h3>
-
-                  <div className="text-sm text-muted-foreground">
-                    {viewingGame.platform && (
-                      <div>Plateforme : {viewingGame.platform}</div>
-                    )}
-                    {typeof viewingGame.rating === "number" && (
-                      <div>Note : {viewingGame.rating}/5</div>
-                    )}
-                    {viewingGame.saga && <div>Saga : {viewingGame.saga}</div>}
-                  </div>
-
-                  {!!viewingGame.genres?.length && (
-                    <div className="flex flex-wrap gap-2">
-                      {viewingGame.genres.map((g) => (
-                        <span
-                          key={g}
-                          className="text-xs px-2 py-1 rounded bg-secondary/40"
-                        >
-                          {g}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {viewingGame.whyLiked && (
-                    <p className="text-sm leading-relaxed">
-                      {viewingGame.whyLiked}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
           </DialogContent>
         </Dialog>
       </div>
