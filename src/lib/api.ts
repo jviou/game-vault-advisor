@@ -8,8 +8,11 @@ export type GameDTO = {
   whyLiked?: string;
   platform?: string;
 
-  // NEW
+  // regroupement
   saga?: string;
+
+  // NOUVEAU: position dans la saga (0,1,2,...) – optionnel
+  order?: number;
 
   finishedAt?: string;
   createdAt?: string;
@@ -33,11 +36,13 @@ async function jfetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 // --- CRUD ---
 export async function listGames(): Promise<GameDTO[]> {
-  // tri récent d’abord
+  // tri récent d’abord (ne gêne pas le tri local par `order` dans la page saga)
   return jfetch<GameDTO[]>(`/games?_sort=createdAt&_order=desc`);
 }
 
-export async function createGame(g: Omit<GameDTO, "id" | "createdAt" | "updatedAt">): Promise<GameDTO> {
+export async function createGame(
+  g: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
+): Promise<GameDTO> {
   const now = new Date().toISOString();
   return jfetch<GameDTO>(`/games`, {
     method: "POST",
@@ -45,7 +50,10 @@ export async function createGame(g: Omit<GameDTO, "id" | "createdAt" | "updatedA
   });
 }
 
-export async function updateGame(id: number, g: Omit<GameDTO, "id" | "createdAt" | "updatedAt"> & Partial<Pick<GameDTO,"createdAt">>): Promise<GameDTO> {
+export async function updateGame(
+  id: number,
+  g: Omit<GameDTO, "id" | "createdAt" | "updatedAt"> & Partial<Pick<GameDTO, "createdAt">>
+): Promise<GameDTO> {
   const now = new Date().toISOString();
   return jfetch<GameDTO>(`/games/${id}`, {
     method: "PUT",
