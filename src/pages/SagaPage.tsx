@@ -1,7 +1,7 @@
 // src/pages/SagaPage.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, GripVertical } from "lucide-react";
+import { ArrowLeft, GripVertical, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -17,18 +17,15 @@ const SagaPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // --- état global & formulaire/modales ---
   const [allGames, setAllGames] = useState<GameDTO[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
   const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
 
-  // --- drag & drop local ---
   const [reorderMode, setReorderMode] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [ordered, setOrdered] = useState<GameDTO[]>([]);
 
-  // Chargement
   async function refresh() {
     try {
       const data = await listGames();
@@ -45,7 +42,6 @@ const SagaPage = () => {
     refresh();
   }, []);
 
-  // Calcul des jeux de la saga
   const sagaTitle = useMemo(() => slug.replace(/-/g, " ").toUpperCase(), [slug]);
 
   const gamesOfSaga = useMemo(() => {
@@ -54,12 +50,10 @@ const SagaPage = () => {
       .sort((a, b) => (a.title || "").localeCompare(b.title || ""));
   }, [allGames, slug]);
 
-  // synchronise la liste ordonnée (drag & drop)
   useEffect(() => {
     setOrdered(gamesOfSaga);
   }, [gamesOfSaga]);
 
-  // --- actions CRUD (identiques à Index.tsx) ---
   const handleSaveGame = async (
     gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
@@ -108,7 +102,6 @@ const SagaPage = () => {
     }
   };
 
-  // --- drag & drop handlers (réorganisation locale) ---
   const onDragStart = (index: number) => (e: React.DragEvent) => {
     setDragIndex(index);
     e.dataTransfer.effectAllowed = "move";
@@ -127,8 +120,6 @@ const SagaPage = () => {
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragIndex(null);
-    // NOTE : si tu veux persister l’ordre, ajoute un champ order sur GameDTO
-    // puis appelle updateGame pour chaque jeu avec le nouvel index.
   };
 
   return (
@@ -161,6 +152,28 @@ const SagaPage = () => {
               <GripVertical className="w-4 h-4" />
               {reorderMode ? "Réorganisation" : "Réorganiser"}
             </Button>
+
+            {/* NEW bouton Ajouter */}
+            <Button
+              onClick={() => {
+                setEditingGame({
+                  id: -1,
+                  title: "",
+                  coverUrl: "",
+                  rating: 1,
+                  genres: [],
+                  platform: "",
+                  saga: slug.replace(/-/g, " "),
+                  createdAt: "",
+                  updatedAt: "",
+                });
+                setIsFormOpen(true);
+              }}
+              className="gap-2 shadow-glow-primary"
+            >
+              <Plus className="w-4 h-4" />
+              Ajouter
+            </Button>
           </div>
         </div>
 
@@ -169,29 +182,23 @@ const SagaPage = () => {
           <div className="text-center py-12 text-muted-foreground">Aucun jeu dans cette saga.</div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
-            {ordered.map((g, idx) => {
-              const wrapperCommon =
-                "rounded-xl transition ring-offset-background " +
-                (reorderMode ? "cursor-move ring-2 ring-dashed ring-border" : "");
-              return (
-                <div
-                  key={g.id}
-                  className={wrapperCommon}
-                  draggable={reorderMode}
-                  onDragStart={onDragStart(idx)}
-                  onDragOver={onDragOver(idx)}
-                  onDrop={onDrop}
-                  title={reorderMode ? "Glissez pour réordonner" : g.title}
-                >
-                  <GameCard
-                    game={g}
-                    onEdit={() => handleEditGame(g)}
-                    onDelete={() => handleDeleteGame(g.id)}
-                    onView={() => setViewingGame(g)}
-                  />
-                </div>
-              );
-            })}
+            {ordered.map((g, idx) => (
+              <div
+                key={g.id}
+                className={reorderMode ? "cursor-move ring-2 ring-dashed ring-border rounded-xl" : ""}
+                draggable={reorderMode}
+                onDragStart={onDragStart(idx)}
+                onDragOver={onDragOver(idx)}
+                onDrop={onDrop}
+              >
+                <GameCard
+                  game={g}
+                  onEdit={() => handleEditGame(g)}
+                  onDelete={() => handleDeleteGame(g.id)}
+                  onView={() => setViewingGame(g)}
+                />
+              </div>
+            ))}
           </div>
         )}
 
@@ -205,7 +212,6 @@ const SagaPage = () => {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              // suggestions de sagas : depuis toute la base
               availableSagas={Array.from(
                 new Set(allGames.map((g) => g.saga?.trim()).filter(Boolean) as string[])
               ).sort()}
@@ -218,7 +224,6 @@ const SagaPage = () => {
           <DialogContent className="max-w-xl w-[95vw] sm:w-auto max-h-[90vh] p-0 overflow-y-auto">
             {viewingGame && (
               <div className="grid grid-cols-1 sm:grid-cols-2">
-                {/* Cover */}
                 <div className="bg-black/20 p-4 flex items-center justify-center">
                   {viewingGame.coverUrl ? (
                     <img
@@ -232,8 +237,6 @@ const SagaPage = () => {
                     </div>
                   )}
                 </div>
-
-                {/* Infos */}
                 <div className="p-4 space-y-3">
                   <h3 className="text-xl font-bold">{viewingGame.title}</h3>
                   <div className="text-sm text-muted-foreground">
@@ -243,7 +246,6 @@ const SagaPage = () => {
                     )}
                     {viewingGame.saga && <div>Saga : {viewingGame.saga}</div>}
                   </div>
-
                   {!!viewingGame.genres?.length && (
                     <div className="flex flex-wrap gap-2">
                       {viewingGame.genres.map((g) => (
@@ -253,7 +255,6 @@ const SagaPage = () => {
                       ))}
                     </div>
                   )}
-
                   {viewingGame.whyLiked && (
                     <p className="text-sm leading-relaxed">{viewingGame.whyLiked}</p>
                   )}
