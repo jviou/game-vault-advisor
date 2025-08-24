@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Plus, GripVertical, MoreVertical } from "lucide-react";
+import { ArrowLeft, Plus, GripVertical, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -16,7 +16,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 
-// util: saga slug -> label
+// util
 const fromSlug = (slug?: string) =>
   (slug || "").replace(/-/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
 
@@ -32,11 +32,13 @@ export default function SagaPage() {
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
   const [reorderMode, setReorderMode] = useState(false);
 
+  // NEW: fiche “jeu”
+  const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
+
   async function refresh() {
     try {
       const data = await listGames();
       const only = data.filter((g) => (g.saga || "").toUpperCase() === sagaName);
-      // tri par order asc puis createdAt asc
       only.sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -54,7 +56,6 @@ export default function SagaPage() {
       });
     }
   }
-
   useEffect(() => {
     refresh();
   }, [slug]);
@@ -98,7 +99,7 @@ export default function SagaPage() {
     }
   };
 
-  // Réorganisation (↑ / ↓), compatible mobile
+  // -------- Réorganisation (flèches + drag & drop natif) --------
   const bump = async (idx: number, dir: -1 | 1) => {
     const arr = [...games];
     const j = idx + dir;
@@ -107,7 +108,6 @@ export default function SagaPage() {
     const b = arr[j];
     const aOrder = a.order ?? idx;
     const bOrder = b.order ?? j;
-
     await Promise.all([
       updateGame(a.id, { ...a, order: bOrder }),
       updateGame(b.id, { ...b, order: aOrder }),
@@ -115,10 +115,42 @@ export default function SagaPage() {
     refresh();
   };
 
+  const dragFrom = useRef<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const onDragStart = (i: number) => {
+    if (!reorderMode) return;
+    dragFrom.current = i;
+  };
+  const onDragOver = (i: number, e: React.DragEvent) => {
+    if (!reorderMode) return;
+    e.preventDefault();
+    setDragOverIndex(i);
+  };
+  const onDrop = async (toIndex: number) => {
+    if (!reorderMode) return;
+    const fromIndex = dragFrom.current;
+    dragFrom.current = null;
+    setDragOverIndex(null);
+    if (fromIndex == null || fromIndex === toIndex) return;
+
+    // nouveau tableau réordonné
+    const arr = [...games];
+    const [moved] = arr.splice(fromIndex, 1);
+    arr.splice(toIndex, 0, moved);
+
+    // normalise order = index
+    await Promise.all(
+      arr.map((g, idx) => updateGame(g.id, { ...g, order: idx }))
+    );
+    refresh();
+  };
+  // --------------------------------------------------------------
+
   return (
     <div className="min-h-screen bg-gradient-hero">
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
-        {/* Header mobile friendly avec bouton bleu Ajouter */}
+        {/* Header */}
         <div className="flex items-center justify-between gap-2 mb-4 sm:mb-6">
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
@@ -145,7 +177,6 @@ export default function SagaPage() {
               Réorganiser
             </Button>
 
-            {/* Bouton bleu Ajouter */}
             <Button
               className="gap-2 shadow-glow-primary"
               onClick={() => {
@@ -160,114 +191,135 @@ export default function SagaPage() {
           </div>
         </div>
 
-        {/* Grille responsive */}
+        {/* Grille */}
         {games.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             Aucun jeu dans cette saga.
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
-            {games.map((g, idx) => (
-              <div
-                key={g.id}
-                className="group relative rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition"
-              >
-                {/* Menu “⋯” discret en haut droite de la carte */}
-                <div className="absolute top-2 right-2 z-10">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button size="icon" variant="secondary" className="h-8 w-8">
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-40">
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setEditingGame(g);
-                          setIsFormOpen(true);
-                        }}
-                      >
-                        Modifier
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onClick={() => handleDelete(g.id)}
-                      >
-                        Supprimer
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+            {games.map((g, idx) => {
+              const dragging = reorderMode;
+              const dragClasses =
+                reorderMode && dragOverIndex === idx
+                  ? "ring-2 ring-primary"
+                  : "";
 
-                {/* Cover */}
-                {g.coverUrl ? (
-                  <img
-                    src={g.coverUrl}
-                    alt={g.title}
-                    className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
-                    Pas de jaquette
-                  </div>
-                )}
-
-                {/* Infos compactes (toujours visibles sur mobile) */}
-                <div className="p-3 space-y-2">
-                  <div className="font-semibold leading-tight line-clamp-2">
-                    {g.title}
-                  </div>
-
-                  {/* LIGNE INFO : plateforme + 1–2 genres */}
-                  <div className="text-xs flex flex-wrap items-center gap-2">
-                    {g.platform && (
-                      <span className="rounded px-2 py-0.5 bg-secondary/50">
-                        {g.platform}
-                      </span>
-                    )}
-                    {!!g.genres?.length &&
-                      g.genres.slice(0, 2).map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded px-2 py-0.5 bg-secondary/40"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                  </div>
-
-                  {/* Bas de carte : note + réorg (si activée) */}
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="text-xs text-muted-foreground">
-                      Note: {typeof g.rating === "number" ? `${g.rating}/5` : "–"}
-                    </div>
-                    {reorderMode && (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => bump(idx, -1)}
-                          disabled={idx === 0}
-                          title="Monter"
-                        >
-                          ↑
+              return (
+                <div
+                  key={g.id}
+                  className={`group relative rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition ${dragClasses}`}
+                  draggable={dragging}
+                  onDragStart={() => onDragStart(idx)}
+                  onDragOver={(e) => onDragOver(idx, e)}
+                  onDrop={() => onDrop(idx)}
+                >
+                  {/* Menu “⋯” */}
+                  <div
+                    className="absolute top-2 right-2 z-10"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="icon" variant="secondary" className="h-8 w-8">
+                          <MoreVertical className="w-4 h-4" />
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => bump(idx, +1)}
-                          disabled={idx === games.length - 1}
-                          title="Descendre"
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setEditingGame(g);
+                            setIsFormOpen(true);
+                          }}
                         >
-                          ↓
-                        </Button>
+                          <Pencil className="w-4 h-4 mr-2" />
+                          Modifier
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => handleDelete(g.id)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Supprimer
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  {/* Cover + ouverture fiche “jeu” */}
+                  <button
+                    type="button"
+                    className="w-full text-left"
+                    onClick={() => !reorderMode && setViewingGame(g)}
+                  >
+                    {g.coverUrl ? (
+                      <img
+                        src={g.coverUrl}
+                        alt={g.title}
+                        className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
+                        Pas de jaquette
                       </div>
                     )}
+                  </button>
+
+                  {/* Infos compactes */}
+                  <div className="p-3 space-y-2">
+                    <div className="font-semibold leading-tight line-clamp-2">
+                      {g.title}
+                    </div>
+
+                    <div className="text-xs flex flex-wrap items-center gap-2">
+                      {g.platform && (
+                        <span className="rounded px-2 py-0.5 bg-secondary/50">
+                          {g.platform}
+                        </span>
+                      )}
+                      {!!g.genres?.length &&
+                        g.genres.slice(0, 2).map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded px-2 py-0.5 bg-secondary/40"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="text-xs text-muted-foreground">
+                        Note: {typeof g.rating === "number" ? `${g.rating}/5` : "–"}
+                      </div>
+                      {reorderMode && (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => bump(idx, -1)}
+                            disabled={idx === 0}
+                            title="Monter"
+                          >
+                            ↑
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => bump(idx, +1)}
+                            disabled={idx === games.length - 1}
+                            title="Descendre"
+                          >
+                            ↓
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -282,7 +334,7 @@ export default function SagaPage() {
                   rating: 3,
                   genres: [],
                   platform: "",
-                  saga: sagaName, // prérempli
+                  saga: sagaName,
                   order:
                     games.length > 0
                       ? (games[games.length - 1].order ?? games.length - 1) + 1
@@ -294,12 +346,88 @@ export default function SagaPage() {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              availableSagas={[]} // pas utile ici
+              availableSagas={[]}
             />
           </DialogContent>
         </Dialog>
 
-        {/* FAB mobile (toujours visible) */}
+        {/* Dialog : Fiche “jeu” (lecture) */}
+        <Dialog open={!!viewingGame} onOpenChange={(o) => !o && setViewingGame(null)}>
+          <DialogContent className="max-w-xl p-0 overflow-hidden">
+            {viewingGame && (
+              <div className="grid grid-cols-1 sm:grid-cols-2">
+                {/* Visuel */}
+                <div className="bg-black/20 p-4 flex items-center justify-center">
+                  {viewingGame.coverUrl ? (
+                    <img
+                      src={viewingGame.coverUrl}
+                      alt={viewingGame.title}
+                      className="rounded-lg w-full h-auto sm:max-h-none max-h-[40vh] object-contain"
+                    />
+                  ) : (
+                    <div className="w-full aspect-[3/4] rounded-lg bg-muted flex items-center justify-center">
+                      Pas de jaquette
+                    </div>
+                  )}
+                </div>
+
+                {/* Détails */}
+                <div className="p-4 space-y-3">
+                  <h3 className="text-xl font-bold">{viewingGame.title}</h3>
+
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    {viewingGame.platform && <div>Plateforme : {viewingGame.platform}</div>}
+                    {typeof viewingGame.rating === "number" && (
+                      <div>Note : {viewingGame.rating}/5</div>
+                    )}
+                    {viewingGame.saga && <div>Saga : {viewingGame.saga}</div>}
+                  </div>
+
+                  {!!viewingGame.genres?.length && (
+                    <div className="flex flex-wrap gap-2">
+                      {viewingGame.genres.map((g) => (
+                        <span key={g} className="text-xs px-2 py-1 rounded bg-secondary/40">
+                          {g}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {viewingGame.whyLiked && (
+                    <p className="text-sm leading-relaxed">{viewingGame.whyLiked}</p>
+                  )}
+
+                  <div className="pt-2 flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setEditingGame(viewingGame);
+                        setViewingGame(null);
+                        setIsFormOpen(true);
+                      }}
+                    >
+                      <Pencil className="w-4 h-4 mr-2" />
+                      Modifier
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        const id = viewingGame.id;
+                        setViewingGame(null);
+                        handleDelete(id);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Supprimer
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* FAB mobile */}
         <Button
           className="fixed sm:hidden bottom-4 right-4 rounded-full h-12 w-12 shadow-glow-primary"
           onClick={() => {
