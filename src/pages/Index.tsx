@@ -1,16 +1,9 @@
-// src/pages/Index.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Gamepad2, MoreVertical } from "lucide-react";
+import { Plus, Gamepad2, Download, Upload, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import GameCard from "@/components/GameCard";
-import { GameForm } from "@/components/GameForm";
-import { SearchAndFilters, Filters } from "@/components/SearchAndFilters";
-import type { GameDTO } from "@/lib/api";
-import { listGames, createGame, updateGame, deleteGame } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { slugify, numberKeyFromTitle } from "@/lib/slug";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -20,21 +13,41 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
-type SagaTile = {
-  slug: string;
-  name: string;
-  count: number;
-  coverUrl?: string;
-};
+import type { GameDTO } from "@/lib/api";
+import { listGames, createGame } from "@/lib/api";
+import { SearchAndFilters, type Filters } from "@/components/SearchAndFilters";
 
-const ORDER_KEY = (slug: string) => `sagaOrder/${slug}`;
+// ---------- Utils ----------
+function toSlug(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9\-]/g, "");
+}
 
-const Index = () => {
-  const [games, setGames] = useState<GameDTO[]>([]);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
+// Choix de jaquette pour une saga (ou pour le groupe “JEUX” sans saga)
+// 1) order asc (undefined à la fin), 2) createdAt asc, 3) id asc
+function pickCover(gamesOfGroup: GameDTO[]): string | undefined {
+  if (!gamesOfGroup?.length) return undefined;
+  const sorted = [...gamesOfGroup].sort((a, b) => {
+    const ao = a.order ?? Number.POSITIVE_INFINITY;
+    const bo = b.order ?? Number.POSITIVE_INFINITY;
+    if (ao !== bo) return ao - bo;
+
+    const ac = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bc = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (ac !== bc) return ac - bc;
+
+    return (a.id ?? 0) - (b.id ?? 0);
+  });
+  return sorted[0]?.coverUrl || undefined;
+}
+
+export default function Index() {
   const { toast } = useToast();
 
+  const [games, setGames] = useState<GameDTO[]>([]);
   const [filters, setFilters] = useState<Filters>({
     search: "",
     genres: [],
@@ -43,6 +56,9 @@ const Index = () => {
     sortBy: "createdAt",
     sortOrder: "desc",
   });
+
+  // pour Import JSON
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function refresh() {
     try {
@@ -61,7 +77,7 @@ const Index = () => {
     refresh();
   }, []);
 
-  // ---- filtre/tris carte par carte (pour la vue "JEUX" si tu l'affiches un jour) ----
+  // ---------- Filtres & recherche ----------
   const filteredGames = useMemo(() => {
     let filtered = games.filter((game) => {
       if (
@@ -79,6 +95,7 @@ const Index = () => {
       return true;
     });
 
+    // Tri local sur la liste filtrée (utile si tu affiches une liste de jeux)
     filtered.sort((a, b) => {
       let aValue: any, bValue: any;
       switch (filters.sortBy) {
@@ -114,69 +131,36 @@ const Index = () => {
     return filtered;
   }, [games, filters]);
 
-  // Plateformes (filtres)
+  // Plateformes pour le composant SearchAndFilters
   const availablePlatforms = useMemo(() => {
     return Array.from(
-      new Set(games.map((g) => g.platform).filter(Boolean) as string[])
+      new Set(filteredGames.map((g) => g.platform).filter(Boolean) as string[])
     ).sort();
-  }, [games]);
-
-  // ---- Groupes de sagas (avec jaquette cohérente) ----
-  const sagaTiles = useMemo<SagaTile[]>(() => {
-    const bySlug = new Map<
-      string,
-      { name: string; items: GameDTO[] }
-    >();
-
-    for (const g of filteredGames) {
-      const sagaName = (g.saga || "").trim();
-      const key = sagaName ? slugify(sagaName) : "jeux";
-      if (!bySlug.has(key))
-        bySlug.set(key, { name: sagaName || "JEUX", items: [] });
-      bySlug.get(key)!.items.push(g);
-    }
-
-    const tiles: SagaTile[] = [];
-    for (const [slug, { name, items }] of bySlug.entries()) {
-      // 1) Ordre utilisateur enregistré ?
-      const savedOrder = JSON.parse(
-        localStorage.getItem(ORDER_KEY(slug)) || "[]"
-      ) as number[];
-
-      let best: GameDTO | undefined;
-      if (savedOrder.length) {
-        const firstId = savedOrder.find((id) =>
-          items.some((g) => g.id === id)
-        );
-        best = items.find((g) => g.id === firstId);
-      }
-
-      // 2) Sinon on essaye de prendre le "1" (ou le plus petit numéro)
-      if (!best) {
-        best = [...items]
-          .sort((a, b) => {
-            const na = numberKeyFromTitle(a.title);
-            const nb = numberKeyFromTitle(b.title);
-            if (na !== nb) return na - nb;
-            return (a.title || "").localeCompare(b.title || "");
-          })
-          .find(Boolean);
-      }
-
-      tiles.push({
-        slug,
-        name,
-        count: items.length,
-        coverUrl: best?.coverUrl || items[0]?.coverUrl || undefined,
-      });
-    }
-
-    // ordre alpha sur le nom d’affichage
-    tiles.sort((a, b) => a.name.localeCompare(b.name, "fr"));
-    return tiles;
   }, [filteredGames]);
 
-  // ---- Export/Import JSON (menu Actions) ----
+  // Groupes de sagas (on sépare bien la “non-saga” sous la tuile JEUX)
+  const { sagaMap, noSaga } = useMemo(() => {
+    const map = new Map<string, GameDTO[]>();
+    const noSagaList: GameDTO[] = [];
+
+    for (const g of filteredGames) {
+      const key = (g.saga || "").trim();
+      if (!key) {
+        noSagaList.push(g);
+      } else {
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(g);
+      }
+    }
+
+    // tri alphabétique des noms de sagas
+    const sortedEntries = Array.from(map.entries()).sort(([a], [b]) =>
+      a.localeCompare(b, "fr")
+    );
+    return { sagaMap: sortedEntries, noSaga: noSagaList };
+  }, [filteredGames]);
+
+  // ---------- Import / Export JSON ----------
   const handleExportAll = () => {
     try {
       const data = JSON.stringify(games, null, 2);
@@ -190,7 +174,10 @@ const Index = () => {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast({ title: "Export JSON", description: "La collection a été exportée." });
+      toast({
+        title: "Export JSON",
+        description: "La collection a été exportée.",
+      });
     } catch (e: any) {
       toast({
         title: "Export échoué",
@@ -200,61 +187,54 @@ const Index = () => {
     }
   };
 
-  const handleImport = async () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "application/json";
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const payload = JSON.parse(text) as GameDTO[];
-        // stratégie simple : purge + recréation
-        // (à adapter si tu veux fusionner)
-        await Promise.all(games.map((g) => deleteGame(g.id)));
-        for (const g of payload) {
-          const { id, createdAt, updatedAt, ...rest } = g;
-          await createGame(rest as any);
-        }
-        await refresh();
-        toast({ title: "Import JSON", description: "Collection restaurée." });
-      } catch (e: any) {
+  const handlePickImport = () => fileInputRef.current?.click();
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // reset
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+
+      const items: GameDTO[] = Array.isArray(json)
+        ? json
+        : Array.isArray(json.games)
+        ? json.games
+        : [];
+
+      if (!items.length) {
         toast({
-          title: "Import échoué",
-          description: e?.message || "JSON invalide.",
+          title: "Import",
+          description:
+            "Aucun jeu détecté dans ce JSON (attendu: tableau de jeux).",
           variant: "destructive",
         });
+        return;
       }
-    };
-    input.click();
-  };
 
-  // ---- CRUD helpers ----
-  const handleSaveGame = async (
-    gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
-  ) => {
-    try {
-      if (editingGame?.id != null) {
-        await updateGame(editingGame.id, gameData);
-        toast({
-          title: "Jeu mis à jour",
-          description: `${gameData.title} a été mis à jour.`,
-        });
-      } else {
-        await createGame(gameData);
-        toast({
-          title: "Jeu ajouté",
-          description: `${gameData.title} a été ajouté à votre collection.`,
-        });
+      // Import simple : on (re)crée les entrées
+      let ok = 0;
+      for (const it of items) {
+        const { id, createdAt, updatedAt, ...payload } = it as any;
+        try {
+          await createGame(payload);
+          ok++;
+        } catch {
+          /* ignore unit error to keep going */
+        }
       }
-      setIsFormOpen(false);
-      setEditingGame(null);
-      await refresh();
-    } catch (e: any) {
+
       toast({
-        title: "Erreur",
-        description: e?.message || "Échec de l’enregistrement.",
+        title: "Import terminé",
+        description: `${ok}/${items.length} jeux importés.`,
+      });
+      refresh();
+    } catch (err: any) {
+      toast({
+        title: "Import échoué",
+        description: err?.message || "JSON invalide.",
         variant: "destructive",
       });
     }
@@ -279,43 +259,42 @@ const Index = () => {
             </div>
           </div>
 
-          <div className="flex gap-2 w-full sm:w-auto">
+          {/* Menu actions */}
+          <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="gap-2">
-                  <MoreVertical className="w-4 h-4" />
-                  Actions
+                  <MoreHorizontal className="w-4 h-4" />
+                  Menu
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>Collection</DropdownMenuLabel>
-                <DropdownMenuItem onClick={handleImport}>
-                  Importer JSON
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportAll}>
+                <DropdownMenuItem onClick={handleExportAll} className="gap-2">
+                  <Download className="w-4 h-4" />
                   Exporter JSON
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link to="/">{/* placeholder */}Rafraîchir</Link>
+                <DropdownMenuItem onClick={handlePickImport} className="gap-2">
+                  <Upload className="w-4 h-4" />
+                  Importer JSON
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={refresh}>Rafraîchir</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button
-              onClick={() => {
-                setEditingGame(null);
-                setIsFormOpen(true);
-              }}
-              className="gap-2 shadow-glow-primary"
-            >
-              + Ajouter
-            </Button>
+            {/* Si tu veux un ajout global (sinon on ajoute depuis la page saga) */}
+            <Link to="/games" className="hidden sm:block">
+              <Button className="gap-2 shadow-glow-primary">
+                <Plus className="w-4 h-4" />
+                Ajouter (JEUX)
+              </Button>
+            </Link>
           </div>
         </div>
 
-        {/* Search + Filtres */}
-        <div className="mb-4 sm:mb-6">
+        {/* Recherche + Filtres (ta barre large et tes filtres existants) */}
+        <div className="mb-6 sm:mb-8">
           <SearchAndFilters
             filters={filters}
             onFiltersChange={setFilters}
@@ -323,57 +302,77 @@ const Index = () => {
           />
         </div>
 
-        {/* Sagas (vignettes) */}
-        <h2 className="text-lg sm:text-xl font-semibold mb-3">Sagas</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {sagaTiles.map((s) => (
-            <Link
-              key={s.slug}
-              to={`/s/${s.slug}`}
-              className="group rounded-xl overflow-hidden bg-card shadow hover:shadow-lg transition"
-            >
-              <div className="aspect-[3/4] bg-black/30">
-                {s.coverUrl ? (
+        {/* Tuiles : d’abord JEUX (pas de saga), puis les sagas triées */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-5">
+          {/* Tuile JEUX */}
+          <Link
+            to="/games"
+            className="group block rounded-xl overflow-hidden shadow-card hover:shadow-card-hover transition hover:-translate-y-0.5 border border-border bg-gradient-card"
+            title="Tous les jeux sans saga"
+          >
+            {pickCover(noSaga) ? (
+              <img
+                src={pickCover(noSaga)!}
+                alt="JEUX"
+                className="w-full aspect-[3/4] object-cover group-hover:scale-105 transition-transform"
+                loading="lazy"
+              />
+            ) : (
+              <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
+                Pas de jaquette
+              </div>
+            )}
+            <div className="p-3">
+              <h2 className="font-bold tracking-wide">JEUX</h2>
+              <p className="text-sm text-muted-foreground">
+                {noSaga.length} jeu{noSaga.length > 1 ? "x" : ""}
+              </p>
+            </div>
+          </Link>
+
+          {/* Tuiles Sagas */}
+          {sagaMap.map(([sagaName, sagaGames]) => {
+            const cover = pickCover(sagaGames);
+            const slug = toSlug(sagaName);
+            return (
+              <Link
+                key={sagaName}
+                to={`/s/${slug}`}
+                className="group block rounded-xl overflow-hidden shadow-card hover:shadow-card-hover transition hover:-translate-y-0.5 border border-border bg-gradient-card"
+                title={sagaName}
+              >
+                {cover ? (
                   <img
-                    src={s.coverUrl}
-                    alt={s.name}
-                    className="w-full h-full object-cover group-hover:scale-[1.02] transition"
+                    src={cover}
+                    alt={sagaName}
+                    className="w-full aspect-[3/4] object-cover group-hover:scale-105 transition-transform"
                     loading="lazy"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                    Pas d’image
+                  <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
+                    Pas de jaquette
                   </div>
                 )}
-              </div>
-              <div className="p-3">
-                <div className="font-semibold uppercase tracking-wide">
-                  {s.name}
+                <div className="p-3">
+                  <h2 className="font-bold truncate">{sagaName}</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {sagaGames.length} jeu{sagaGames.length > 1 ? "x" : ""}
+                  </p>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {s.count} jeu{s.count > 1 ? "x" : ""}
-                </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
 
-        {/* Dialog : Formulaire Ajouter/Modifier */}
-        <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <GameForm
-              game={editingGame as any}
-              onSave={handleSaveGame}
-              onCancel={() => {
-                setIsFormOpen(false);
-                setEditingGame(null);
-              }}
-            />
-          </DialogContent>
-        </Dialog>
+        {/* input caché pour l'import JSON */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json"
+          className="hidden"
+          onChange={handleImportFile}
+        />
       </div>
     </div>
   );
-};
-
-export default Index;
+}
