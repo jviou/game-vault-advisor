@@ -8,10 +8,10 @@ export type GameDTO = {
   whyLiked?: string;
   platform?: string;
 
-  // regroupement
+  // Regroupement par saga
   saga?: string;
 
-  // NOUVEAU: position dans la saga (0,1,2,...) – optionnel
+  // Position dans la saga (0, 1, 2, ...) – optionnel
   order?: number;
 
   finishedAt?: string;
@@ -34,9 +34,9 @@ async function jfetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// --- CRUD ---
+// --- CRUD de base ---
 export async function listGames(): Promise<GameDTO[]> {
-  // tri récent d’abord (ne gêne pas le tri local par `order` dans la page saga)
+  // Tri récent d’abord (ne gêne pas le tri local par `order` dans les pages de saga)
   return jfetch<GameDTO[]>(`/games?_sort=createdAt&_order=desc`);
 }
 
@@ -52,7 +52,8 @@ export async function createGame(
 
 export async function updateGame(
   id: number,
-  g: Omit<GameDTO, "id" | "createdAt" | "updatedAt"> & Partial<Pick<GameDTO, "createdAt">>
+  g: Omit<GameDTO, "id" | "createdAt" | "updatedAt"> &
+    Partial<Pick<GameDTO, "createdAt">>
 ): Promise<GameDTO> {
   const now = new Date().toISOString();
   return jfetch<GameDTO>(`/games/${id}`, {
@@ -63,4 +64,27 @@ export async function updateGame(
 
 export async function deleteGame(id: number): Promise<void> {
   await jfetch<void>(`/games/${id}`, { method: "DELETE" });
+}
+
+// --- Utilitaires (optionnels) pour les pages Saga ---
+// 1) Récupérer les jeux d'une saga (pratique en page /s/:slug)
+export async function listGamesBySaga(saga: string): Promise<GameDTO[]> {
+  const enc = encodeURIComponent(saga);
+  return jfetch<GameDTO[]>(`/games?saga=${enc}`);
+}
+
+// 2) Mettre à jour uniquement l'ordre d'un jeu (PATCH json-server)
+export async function updateGameOrder(id: number, order: number): Promise<GameDTO> {
+  const now = new Date().toISOString();
+  return jfetch<GameDTO>(`/games/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ order, updatedAt: now }),
+  });
+}
+
+// 3) Réordonner en lot (simple boucle PATCH)
+export async function reorderSaga(items: Array<{ id: number; order: number }>) {
+  for (const it of items) {
+    await updateGameOrder(it.id, it.order);
+  }
 }
