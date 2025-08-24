@@ -1,43 +1,49 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { Plus, GripVertical } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Plus, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 
-import GameCard from "@/components/GameCard";
-import { GameForm } from "@/components/GameForm";
-
 import type { GameDTO } from "@/lib/api";
 import { listGames, createGame, updateGame, deleteGame } from "@/lib/api";
+import { GameForm } from "@/components/GameForm";
 
-function titleFromSlug(slug: string) {
-  return slug.replace(/-/g, " ").toUpperCase();
-}
+// util: saga slug -> label
+const fromSlug = (slug?: string) =>
+  (slug || "").replace(/-/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
 
 export default function SagaPage() {
-  const { slug = "" } = useParams<{ slug: string }>();
+  const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [allGames, setAllGames] = useState<GameDTO[]>([]);
+  const sagaName = useMemo(() => fromSlug(slug), [slug]);
+
+  const [games, setGames] = useState<GameDTO[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
-
-  // vue rapide
-  const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
-
-  // mode réorganisation
   const [reorderMode, setReorderMode] = useState(false);
 
   async function refresh() {
     try {
       const data = await listGames();
-      setAllGames(data);
+      // ne garder que les jeux de cette saga
+      const only = data.filter((g) => (g.saga || "").toUpperCase() === sagaName);
+      // tri par order asc puis createdAt asc
+      only.sort((a, b) => {
+        const ao = a.order ?? Number.POSITIVE_INFINITY;
+        const bo = b.order ?? Number.POSITIVE_INFINITY;
+        if (ao !== bo) return ao - bo;
+        const ac = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bc = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return ac - bc;
+      });
+      setGames(only);
     } catch (e: any) {
       toast({
         title: "Erreur",
-        description: e?.message || "Impossible de charger les jeux.",
+        description: e?.message || "Impossible de charger la saga.",
         variant: "destructive",
       });
     }
@@ -45,43 +51,22 @@ export default function SagaPage() {
 
   useEffect(() => {
     refresh();
-  }, []);
+  }, [slug]);
 
-  const sagaName = useMemo(() => titleFromSlug(slug), [slug]);
-
-  const games = useMemo(() => {
-    const rows = allGames.filter(
-      (g) => (g.saga || "").trim().toLowerCase() === sagaName.toLowerCase()
-    );
-    // ordre stable pour la page : d’abord orderIndex, puis createdAt, puis id
-    return rows.sort((a, b) => {
-      const ao = (a as any).orderIndex ?? Number.POSITIVE_INFINITY;
-      const bo = (b as any).orderIndex ?? Number.POSITIVE_INFINITY;
-      if (ao !== bo) return ao - bo;
-
-      const ac = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const bc = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      if (ac !== bc) return ac - bc;
-
-      return (a.id ?? 0) - (b.id ?? 0);
-    });
-  }, [allGames, sagaName]);
-
-  // ---------- CRUD ----------
-  const handleSaveGame = async (
-    gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
+  const handleSave = async (
+    form: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
     try {
-      if (editingGame?.id != null) {
-        await updateGame(editingGame.id, gameData);
-        toast({ title: "Jeu mis à jour", description: gameData.title });
+      if (editingGame?.id) {
+        await updateGame(editingGame.id, form);
+        toast({ title: "Jeu mis à jour" });
       } else {
-        await createGame(gameData);
-        toast({ title: "Jeu ajouté", description: gameData.title });
+        await createGame(form);
+        toast({ title: "Jeu ajouté" });
       }
       setIsFormOpen(false);
       setEditingGame(null);
-      await refresh();
+      refresh();
     } catch (e: any) {
       toast({
         title: "Erreur",
@@ -91,22 +76,13 @@ export default function SagaPage() {
     }
   };
 
-  const handleEditGame = (game: GameDTO) => {
-    setEditingGame(game);
-    setIsFormOpen(true);
-  };
-
-  const handleDeleteGame = async (id: number) => {
-    const game = games.find((g) => g.id === id);
-    if (!confirm(`Supprimer “${game?.title ?? "ce jeu"}” ?`)) return;
+  const handleDelete = async (id: number) => {
+    const g = games.find((x) => x.id === id);
+    if (!confirm(`Supprimer “${g?.title ?? "ce jeu"}” ?`)) return;
     try {
       await deleteGame(id);
-      toast({
-        title: "Jeu supprimé",
-        description: `${game?.title ?? "Jeu"} supprimé.`,
-        variant: "destructive",
-      });
-      await refresh();
+      toast({ title: "Jeu supprimé", variant: "destructive" });
+      refresh();
     } catch (e: any) {
       toast({
         title: "Erreur",
@@ -116,190 +92,213 @@ export default function SagaPage() {
     }
   };
 
-  // ---------- Réorganisation (HTML5 DnD) ----------
-  const dragIndex = useRef<number | null>(null);
+  // Réorganisation simple: cliquer ↑/↓ (mobile friendly). Si tu as déjà un drag&drop,
+  // tu peux garder le tien — celui-ci est minimal et fiable sur mobile.
+  const bump = async (idx: number, dir: -1 | 1) => {
+    const arr = [...games];
+    const j = idx + dir;
+    if (j < 0 || j >= arr.length) return;
+    const a = arr[idx];
+    const b = arr[j];
+    // swap des order
+    const aOrder = a.order ?? idx;
+    const bOrder = b.order ?? j;
 
-  const onDragStart = (idx: number) => (e: React.DragEvent) => {
-    dragIndex.current = idx;
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const onDragOver = (idx: number) => (e: React.DragEvent) => {
-    if (!reorderMode) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  };
-
-  const onDrop = (idx: number) => async (e: React.DragEvent) => {
-    e.preventDefault();
-    if (dragIndex.current === null || dragIndex.current === idx) return;
-
-    // copie locale
-    const local = [...games];
-    const [moved] = local.splice(dragIndex.current, 1);
-    local.splice(idx, 0, moved);
-
-    // assigne un orderIndex 0..n-1
-    const updates = local.map((g, i) =>
-      updateGame(g.id!, { ...(g as any), orderIndex: i })
-    );
-    try {
-      await Promise.all(updates);
-      toast({ title: "Ordre mis à jour" });
-      dragIndex.current = null;
-      refresh();
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e?.message || "Impossible d’enregistrer l’ordre.",
-        variant: "destructive",
-      });
-    }
+    await Promise.all([
+      updateGame(a.id, { ...a, order: bOrder }),
+      updateGame(b.id, { ...b, order: aOrder }),
+    ]);
+    refresh();
   };
 
   return (
     <div className="min-h-screen bg-gradient-hero">
-      <div className="container mx-auto px-3 sm:px-6 py-6 sm:py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3 mb-6">
-          <div>
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" onClick={() => navigate(-1)}>
-                ← Retour
-              </Button>
-              <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-                {sagaName}
+      <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+        {/* Header mobile friendly */}
+        <div className="flex items-center justify-between gap-2 mb-4 sm:mb-6">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+                {sagaName || "SAGA"}
               </h1>
-            </div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              {games.length} {games.length > 1 ? "jeux" : "jeu"}
+              <p className="text-muted-foreground text-sm">
+                {games.length} jeu{games.length > 1 ? "x" : ""}
+              </p>
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Button
               variant={reorderMode ? "default" : "outline"}
               className="gap-2"
               onClick={() => setReorderMode((v) => !v)}
-              title="Réorganiser l'ordre (glisser/déposer)"
+              title="Réorganiser"
             >
               <GripVertical className="w-4 h-4" />
               Réorganiser
             </Button>
 
+            {/* Toujours visible sur mobile */}
             <Button
-              className="gap-2"
+              className="gap-2 shadow-glow-primary"
               onClick={() => {
-                setEditingGame({
-                  id: 0,
-                  title: "",
-                  coverUrl: "",
-                  rating: 1,
-                  genres: [],
-                  platform: "",
-                  saga: sagaName,
-                } as any);
+                setEditingGame(null);
                 setIsFormOpen(true);
               }}
+              title="Ajouter un jeu"
             >
               <Plus className="w-4 h-4" />
-              Ajouter
+              <span className="hidden sm:inline">Ajouter</span>
             </Button>
           </div>
         </div>
 
-        {/* Grille jeux */}
+        {/* Grille responsive */}
         {games.length === 0 ? (
-          <div className="text-center text-muted-foreground py-16">
+          <div className="text-center py-12 text-muted-foreground">
             Aucun jeu dans cette saga.
           </div>
         ) : (
-          <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-            {games.map((g, i) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
+            {games.map((g, idx) => (
               <div
                 key={g.id}
-                draggable={reorderMode}
-                onDragStart={onDragStart(i)}
-                onDragOver={onDragOver(i)}
-                onDrop={onDrop(i)}
-                className={reorderMode ? "cursor-move" : ""}
+                className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition"
               >
-                <GameCard
-                  game={g}
-                  onView={(gg) => setViewingGame(gg)}
-                  onEdit={handleEditGame}
-                  onDelete={handleDeleteGame}
-                  showActions={!reorderMode}
-                />
+                {/* Cover */}
+                {g.coverUrl ? (
+                  <img
+                    src={g.coverUrl}
+                    alt={g.title}
+                    className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
+                    Pas de jaquette
+                  </div>
+                )}
+
+                {/* Infos compactes (toujours visibles sur mobile) */}
+                <div className="p-3 space-y-2">
+                  <div className="font-semibold leading-tight line-clamp-2">
+                    {g.title}
+                  </div>
+
+                  {/* LIGNE INFO mobile : plateforme + genres (1–2) */}
+                  <div className="text-xs flex flex-wrap items-center gap-2">
+                    {g.platform && (
+                      <span className="rounded px-2 py-0.5 bg-secondary/50">
+                        {g.platform}
+                      </span>
+                    )}
+                    {!!g.genres?.length &&
+                      g.genres.slice(0, 2).map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded px-2 py-0.5 bg-secondary/40"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                  </div>
+
+                  {/* Actions & réorg */}
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="text-xs text-muted-foreground">
+                      Note: {typeof g.rating === "number" ? `${g.rating}/5` : "–"}
+                    </div>
+                    {!reorderMode ? (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingGame(g);
+                            setIsFormOpen(true);
+                          }}
+                        >
+                          Modifier
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDelete(g.id)}
+                        >
+                          Suppr.
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => bump(idx, -1)}
+                          disabled={idx === 0}
+                          title="Monter"
+                        >
+                          ↑
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => bump(idx, +1)}
+                          disabled={idx === games.length - 1}
+                          title="Descendre"
+                        >
+                          ↓
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Dialog : formulaire */}
+        {/* Dialog : Ajouter / Modifier */}
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <GameForm
-              game={editingGame as any}
-              onSave={handleSaveGame}
+              game={
+                editingGame || {
+                  title: "",
+                  coverUrl: "",
+                  rating: 3,
+                  genres: [],
+                  platform: "",
+                  saga: sagaName, // prérempli
+                  order:
+                    games.length > 0
+                      ? (games[games.length - 1].order ?? games.length - 1) + 1
+                      : 0,
+                }
+              }
+              onSave={handleSave}
               onCancel={() => {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              availableSagas={Array.from(
-                new Set(allGames.map((g) => g.saga?.trim()).filter(Boolean) as string[])
-              ).sort()}
+              availableSagas={[]} // pas utile ici
             />
           </DialogContent>
         </Dialog>
 
-        {/* Dialog : vue d’un jeu */}
-        <Dialog
-          open={!!viewingGame}
-          onOpenChange={(open) => !open && setViewingGame(null)}
+        {/* FAB mobile (toujours visible) */}
+        <Button
+          className="fixed sm:hidden bottom-4 right-4 rounded-full h-12 w-12 shadow-glow-primary"
+          onClick={() => {
+            setEditingGame(null);
+            setIsFormOpen(true);
+          }}
+          title="Ajouter un jeu"
         >
-          <DialogContent className="max-w-xl w-[95vw] sm:w-auto max-h-[90vh] p-0 overflow-y-auto">
-            {viewingGame && (
-              <div className="grid grid-cols-1 sm:grid-cols-2">
-                <div className="bg-black/20 p-4 flex items-center justify-center">
-                  {viewingGame.coverUrl ? (
-                    <img
-                      src={viewingGame.coverUrl}
-                      alt={viewingGame.title}
-                      className="rounded-lg w-full h-auto sm:max-h-none max-h-[40vh] object-contain"
-                    />
-                  ) : (
-                    <div className="w-full aspect-[3/4] rounded-lg bg-muted flex items-center justify-center">
-                      Pas de jaquette
-                    </div>
-                  )}
-                </div>
-                <div className="p-4 space-y-3">
-                  <h3 className="text-xl font-bold">{viewingGame.title}</h3>
-                  <div className="text-sm text-muted-foreground">
-                    {viewingGame.platform && <div>Plateforme : {viewingGame.platform}</div>}
-                    {typeof viewingGame.rating === "number" && (
-                      <div>Note : {viewingGame.rating}/5</div>
-                    )}
-                    {viewingGame.saga && <div>Saga : {viewingGame.saga}</div>}
-                  </div>
-                  {!!viewingGame.genres?.length && (
-                    <div className="flex flex-wrap gap-2">
-                      {viewingGame.genres.map((g) => (
-                        <span key={g} className="text-xs px-2 py-1 rounded bg-secondary/40">
-                          {g}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {viewingGame.whyLiked && (
-                    <p className="text-sm leading-relaxed">{viewingGame.whyLiked}</p>
-                  )}
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+          <Plus className="w-5 h-5" />
+        </Button>
       </div>
     </div>
   );
