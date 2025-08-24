@@ -1,4 +1,5 @@
 // src/lib/slug.ts
+
 /**
  * Slug cohérent + robuste : supprime accents, ponctuation, met en minuscules,
  * remplace par des tirets et condense.
@@ -44,4 +45,22 @@ export function numberKeyFromTitle(title?: string): number {
   if (roman) return romanToInt(roman[1]);
 
   return Number.POSITIVE_INFINITY;
+}
+
+/* ------------------------------------------------------------------ */
+/*                Helpers dédiés aux SLUGS DE SAGAS                   */
+/* ------------------------------------------------------------------ */
+
+/** saga -> slug : "" (jeux sans saga) => "jeux", sinon slugify */
+export function toSlugSaga(saga?: string): string {
+  const s = (saga ?? "").trim();
+  if (s === "") return "jeux";
+  return slugify(s);
+}
+
+/** slug -> saga : "jeux" => "" (clé logique), sinon "dragon-quest" => "dragon quest" */
+export function fromSlugSaga(slug?: string): string {
+  const s = (slug ?? "").trim().toLowerCase();
+  if (s === "" || s === "jeux") return "";
+  return s.replace(/-/g, " ").trim();
 }
