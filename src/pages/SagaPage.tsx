@@ -1,3 +1,4 @@
+// src/pages/SagaPage.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, GripVertical, MoreVertical, Pencil, Trash2 } from "lucide-react";
@@ -16,16 +17,16 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 
-// util
-const fromSlug = (slug?: string) =>
-  (slug || "").replace(/-/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
+import { fromSlugSaga } from "@/lib/slug";
 
 export default function SagaPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const sagaName = useMemo(() => fromSlug(slug), [slug]);
+  // slug "jeux" => "" (clé logique), sinon "dragon-quest" => "dragon quest"
+  const sagaKey = useMemo(() => fromSlugSaga(slug), [slug]);
+  const sagaTitle = (sagaKey === "" ? "JEUX" : sagaKey).toUpperCase();
 
   const [games, setGames] = useState<GameDTO[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -38,14 +39,14 @@ export default function SagaPage() {
   async function refresh() {
     try {
       const data = await listGames();
-      const only = data.filter((g) => (g.saga || "").toUpperCase() === sagaName);
+      const only = data.filter((g) => (g.saga ?? "").trim().toLowerCase() === sagaKey.toLowerCase());
       only.sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
         if (ao !== bo) return ao - bo;
         const ac = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bc = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return ac - bc;
+        return ac - bc; // plus ancien d’abord (garde ta logique d’avant)
       });
       setGames(only);
     } catch (e: any) {
@@ -134,15 +135,11 @@ export default function SagaPage() {
     setDragOverIndex(null);
     if (fromIndex == null || fromIndex === toIndex) return;
 
-    // nouveau tableau réordonné
     const arr = [...games];
     const [moved] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, moved);
 
-    // normalise order = index
-    await Promise.all(
-      arr.map((g, idx) => updateGame(g.id, { ...g, order: idx }))
-    );
+    await Promise.all(arr.map((g, idx) => updateGame(g.id, { ...g, order: idx })));
     refresh();
   };
   // --------------------------------------------------------------
@@ -158,7 +155,7 @@ export default function SagaPage() {
             </Button>
             <div>
               <h1 className="text-xl sm:text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-                {sagaName || "SAGA"}
+                {sagaTitle}
               </h1>
               <p className="text-muted-foreground text-sm">
                 {games.length} jeu{games.length > 1 ? "x" : ""}
@@ -201,9 +198,7 @@ export default function SagaPage() {
             {games.map((g, idx) => {
               const dragging = reorderMode;
               const dragClasses =
-                reorderMode && dragOverIndex === idx
-                  ? "ring-2 ring-primary"
-                  : "";
+                reorderMode && dragOverIndex === idx ? "ring-2 ring-primary" : "";
 
               return (
                 <div
@@ -280,10 +275,7 @@ export default function SagaPage() {
                       )}
                       {!!g.genres?.length &&
                         g.genres.slice(0, 2).map((tag) => (
-                          <span
-                            key={tag}
-                            className="rounded px-2 py-0.5 bg-secondary/40"
-                          >
+                          <span key={tag} className="rounded px-2 py-0.5 bg-secondary/40">
                             {tag}
                           </span>
                         ))}
@@ -334,7 +326,7 @@ export default function SagaPage() {
                   rating: 3,
                   genres: [],
                   platform: "",
-                  saga: sagaName,
+                  saga: sagaKey, // << important : "" pour JEUX
                   order:
                     games.length > 0
                       ? (games[games.length - 1].order ?? games.length - 1) + 1
@@ -346,7 +338,7 @@ export default function SagaPage() {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              availableSagas={[]}
+              availableSagas={[]} // garde tel quel si tu n'en as pas besoin ici
             />
           </DialogContent>
         </Dialog>
