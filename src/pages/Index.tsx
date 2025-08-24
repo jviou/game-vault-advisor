@@ -287,7 +287,7 @@ export default function Index() {
             <Link to="/games" className="hidden sm:block">
               <Button className="gap-2 shadow-glow-primary">
                 <Plus className="w-4 h-4" />
-                Ajouter (JEUX)
+                Ajouter
               </Button>
             </Link>
           </div>
