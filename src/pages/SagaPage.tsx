@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Plus, GripVertical } from "lucide-react";
+import { ArrowLeft, Plus, GripVertical, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -8,6 +8,13 @@ import { useToast } from "@/hooks/use-toast";
 import type { GameDTO } from "@/lib/api";
 import { listGames, createGame, updateGame, deleteGame } from "@/lib/api";
 import { GameForm } from "@/components/GameForm";
+
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
 // util: saga slug -> label
 const fromSlug = (slug?: string) =>
@@ -28,7 +35,6 @@ export default function SagaPage() {
   async function refresh() {
     try {
       const data = await listGames();
-      // ne garder que les jeux de cette saga
       const only = data.filter((g) => (g.saga || "").toUpperCase() === sagaName);
       // tri par order asc puis createdAt asc
       only.sort((a, b) => {
@@ -92,15 +98,13 @@ export default function SagaPage() {
     }
   };
 
-  // Réorganisation simple: cliquer ↑/↓ (mobile friendly). Si tu as déjà un drag&drop,
-  // tu peux garder le tien — celui-ci est minimal et fiable sur mobile.
+  // Réorganisation (↑ / ↓), compatible mobile
   const bump = async (idx: number, dir: -1 | 1) => {
     const arr = [...games];
     const j = idx + dir;
     if (j < 0 || j >= arr.length) return;
     const a = arr[idx];
     const b = arr[j];
-    // swap des order
     const aOrder = a.order ?? idx;
     const bOrder = b.order ?? j;
 
@@ -114,7 +118,7 @@ export default function SagaPage() {
   return (
     <div className="min-h-screen bg-gradient-hero">
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
-        {/* Header mobile friendly */}
+        {/* Header mobile friendly avec bouton bleu Ajouter */}
         <div className="flex items-center justify-between gap-2 mb-4 sm:mb-6">
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
@@ -141,14 +145,14 @@ export default function SagaPage() {
               Réorganiser
             </Button>
 
-            {/* Toujours visible sur mobile */}
+            {/* Bouton bleu Ajouter */}
             <Button
               className="gap-2 shadow-glow-primary"
               onClick={() => {
                 setEditingGame(null);
                 setIsFormOpen(true);
               }}
-              title="Ajouter un jeu"
+              title="Ajouter"
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Ajouter</span>
@@ -166,8 +170,35 @@ export default function SagaPage() {
             {games.map((g, idx) => (
               <div
                 key={g.id}
-                className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition"
+                className="group relative rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition"
               >
+                {/* Menu “⋯” discret en haut droite de la carte */}
+                <div className="absolute top-2 right-2 z-10">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="icon" variant="secondary" className="h-8 w-8">
+                        <MoreVertical className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-40">
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setEditingGame(g);
+                          setIsFormOpen(true);
+                        }}
+                      >
+                        Modifier
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => handleDelete(g.id)}
+                      >
+                        Supprimer
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
                 {/* Cover */}
                 {g.coverUrl ? (
                   <img
@@ -188,7 +219,7 @@ export default function SagaPage() {
                     {g.title}
                   </div>
 
-                  {/* LIGNE INFO mobile : plateforme + genres (1–2) */}
+                  {/* LIGNE INFO : plateforme + 1–2 genres */}
                   <div className="text-xs flex flex-wrap items-center gap-2">
                     {g.platform && (
                       <span className="rounded px-2 py-0.5 bg-secondary/50">
@@ -206,32 +237,12 @@ export default function SagaPage() {
                       ))}
                   </div>
 
-                  {/* Actions & réorg */}
+                  {/* Bas de carte : note + réorg (si activée) */}
                   <div className="flex items-center justify-between pt-1">
                     <div className="text-xs text-muted-foreground">
                       Note: {typeof g.rating === "number" ? `${g.rating}/5` : "–"}
                     </div>
-                    {!reorderMode ? (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEditingGame(g);
-                            setIsFormOpen(true);
-                          }}
-                        >
-                          Modifier
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleDelete(g.id)}
-                        >
-                          Suppr.
-                        </Button>
-                      </div>
-                    ) : (
+                    {reorderMode && (
                       <div className="flex items-center gap-1">
                         <Button
                           size="sm"
@@ -295,7 +306,7 @@ export default function SagaPage() {
             setEditingGame(null);
             setIsFormOpen(true);
           }}
-          title="Ajouter un jeu"
+          title="Ajouter"
         >
           <Plus className="w-5 h-5" />
         </Button>
