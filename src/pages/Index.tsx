@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 
-import { getAllGames, createGame, updateGame } from "@/lib/db";
-import type { GameDTO } from "@/types";
+import { listGames as getAllGames, createGame, updateGame } from "@/lib/api";
+import type { GameDTO } from "@/lib/api";
 
 
 // --- helper: choisir la jaquette "de référence" d'une saga ---
