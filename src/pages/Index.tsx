@@ -156,7 +156,7 @@ export default function Index() {
     try {
       const data = JSON.stringify(games, null, 2);
       const blob = new Blob([data], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const date = new Date().toISOString().slice(0, 10);
       a.href = url;
@@ -283,26 +283,35 @@ export default function Index() {
         {jeuxGroup && (
           <Link
             to={`/s/${jeuxGroup.slug}`}
-            className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
-            aria-label="Aller à la section JEUX"
+            className="mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition"
           >
+            {/* Image responsive */}
             <picture>
-              {/* Optionnel : sources responsive si tu fournis ces fichiers */}
-              <source media="(min-width:1024px)" srcSet="/banner_jeux_1920x400.jpg" />
-              <source media="(min-width:640px)"  srcSet="/banner_jeux_1600x334.jpg" />
+              <source
+                media="(max-width: 640px)"
+                srcSet="/banner_jeux_1024x360.jpg"
+              />
+              <source
+                media="(max-width: 1024px)"
+                srcSet="/banner_jeux_1600x450.jpg"
+              />
               <img
-                src="/banner_jeux_1024x300.jpg"
+                src="/banner_jeux_1920x500.jpg"
                 alt="Section JEUX"
-                className="w-full h-auto max-h-[150px] sm:max-h-[170px] lg:max-h-[190px] object-contain object-center"
-                loading="eager"
-                decoding="async"
+                className="w-full object-cover"
+                // Hauteur plus compacte sur desktop
+                style={{
+                  maxHeight: 220, // desktop
+                }}
               />
             </picture>
 
-            {/* Légende en-dessous (texte clair, pas de calque au-dessus) */}
-            <div className="px-4 pb-3 pt-2">
-              <div className="text-sm font-semibold text-muted-foreground">JEUX</div>
-              <div className="text-xs text-muted-foreground/80">
+            {/* Légende (sous l'image, pas d'overlay) */}
+            <div className="p-3 sm:p-4">
+              <div className="font-semibold uppercase leading-tight">
+                {jeuxGroup.name}
+              </div>
+              <div className="text-xs text-muted-foreground">
                 {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
               </div>
             </div>
@@ -359,9 +368,7 @@ export default function Index() {
               }}
               availableSagas={Array.from(
                 new Set(
-                  games
-                    .map((g) => normalizeSaga(g.saga))
-                    .filter(Boolean) as string[]
+                  games.map((g) => normalizeSaga(g.saga)).filter(Boolean) as string[]
                 )
               ).sort()}
             />
