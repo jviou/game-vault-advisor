@@ -4,21 +4,25 @@ import { Gamepad2, Plus, MoreVertical, Upload, Download } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import { SearchAndFilters, type Filters } from "@/components/SearchAndFilters";
 import { useToast } from "@/hooks/use-toast";
 
 import type { GameDTO } from "@/lib/api";
-import { listGames, createGame, updateGame, deleteGame } from "@/lib/api";
+import { listGames, createGame, updateGame } from "@/lib/api";
 import { GameForm } from "@/components/GameForm";
 
-// --- utils
-const slugify = (s: string) =>
-  s.toLowerCase().trim().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+// ---> IMPORTANT : on utilise ceux du fichier utils
+import { slugify, normalizeSaga } from "@/lib/slug";
 
-const SANS_SAGA_NAME = "JEUX";
-const SANS_SAGA_SLUG = "jeux";
+const SANS_SAGA_NAME = "JEUX";   // affichage & groupage
+const SANS_SAGA_SLUG = "jeux";   // route pour la section "JEUX"
 
 export default function Index() {
   const navigate = useNavigate();
@@ -57,14 +61,22 @@ export default function Index() {
 
   // Plateformes pour le filtre
   const availablePlatforms = useMemo(() => {
-    return Array.from(new Set(games.map((g) => g.platform).filter(Boolean) as string[])).sort();
+    return Array.from(
+      new Set(games.map((g) => g.platform).filter(Boolean) as string[])
+    ).sort();
   }, [games]);
 
-  // Groupes par saga (nom -> liste)
-  type SagaGroup = { name: string; slug: string; items: GameDTO[]; cover?: string; count: number };
+  // ---- Groupage par saga (MAJUSCULES) + cover + slug ----
+  type SagaGroup = {
+    name: string;      // affichage (MAJUSCULES)
+    slug: string;      // route /s/<slug>
+    items: GameDTO[];  // jeux du groupe
+    cover?: string;    // url de la cover choisie
+    count: number;
+  };
 
   const sagaGroups: SagaGroup[] = useMemo(() => {
-    // appliquer filtres “globaux” avant de regrouper
+    // appliquer les filtres avant de regrouper
     const filtered = games.filter((game) => {
       if (filters.search && !game.title?.toLowerCase().includes(filters.search.toLowerCase())) return false;
       if (filters.genres.length > 0 && !filters.genres.some((g) => (game.genres || []).includes(g))) return false;
@@ -73,16 +85,16 @@ export default function Index() {
       return true;
     });
 
+    // groupage : clé = saga normalisée en MAJUSCULES, sinon "JEUX"
     const map = new Map<string, GameDTO[]>();
     for (const g of filtered) {
-      const name = (g.saga || SANS_SAGA_NAME).trim();
-      if (!map.has(name)) map.set(name, []);
-      map.get(name)!.push(g);
+      const key = normalizeSaga(g.saga) || SANS_SAGA_NAME;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(g);
     }
 
-    // calcule cover + slug par groupe
-    const groups: SagaGroup[] = Array.from(map.entries()).map(([name, items]) => {
-      // cover = 1er jeu trié par order puis createdAt (comme dans la page saga)
+    // calcul cover + slug + tri interne pour trouver le "premier"
+    const groups: SagaGroup[] = Array.from(map.entries()).map(([nameUpper, items]) => {
       const sorted = [...items].sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -92,23 +104,35 @@ export default function Index() {
         return ac - bc;
       });
       const cover = sorted[0]?.coverUrl;
-      const slug = name.toUpperCase() === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(name);
-      return { name, slug, items, cover, count: items.length };
+
+      const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
+      return { name: nameUpper, slug, items, cover, count: items.length };
     });
 
-    // tri alpha par nom
-    groups.sort((a, b) => a.name.localeCompare(b.name));
+    // tri alpha, en gardant JEUX en premier
+    groups.sort((a, b) => {
+      if (a.name === SANS_SAGA_NAME && b.name !== SANS_SAGA_NAME) return -1;
+      if (b.name === SANS_SAGA_NAME && a.name !== SANS_SAGA_NAME) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
     return groups;
   }, [games, filters]);
 
-  // Ajouter / modifier / supprimer
+  // ---- Ajouter / modifier ----
   const handleSaveGame = async (gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">) => {
     try {
+      // on normalise la saga à l’enregistrement (pour éviter de re-créer crash bandicoot / CRASH BANDICOOT)
+      const payload = {
+        ...gameData,
+        saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
+      };
+
       if (editingGame?.id != null) {
-        await updateGame(editingGame.id, gameData);
+        await updateGame(editingGame.id, payload);
         toast({ title: "Jeu mis à jour" });
       } else {
-        await createGame(gameData);
+        await createGame(payload);
         toast({ title: "Jeu ajouté" });
       }
       setIsFormOpen(false);
@@ -153,10 +177,13 @@ export default function Index() {
     reader.onload = async () => {
       try {
         const payload = JSON.parse(String(reader.result)) as GameDTO[];
-        // très simple : recrée chaque entrée (tu peux nettoyer selon ton API si besoin)
         for (const g of payload) {
           const { id, createdAt, updatedAt, ...rest } = g as any;
-          await createGame(rest);
+          // normalise la saga au passage
+          await createGame({
+            ...rest,
+            saga: rest.saga ? normalizeSaga(rest.saga) : undefined,
+          });
         }
         toast({ title: "Import JSON", description: "Import terminé." });
         refresh();
@@ -258,7 +285,7 @@ export default function Index() {
             {sagaGroups.map((g) => (
               <Link
                 key={g.slug}
-                to={`/s/${g.slug}`} // <-- IMPORTANT : JEUX -> /s/jeux
+                to={`/s/${g.slug}`} // JEUX -> /s/jeux
                 className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
               >
                 {g.cover ? (
@@ -273,8 +300,12 @@ export default function Index() {
                   </div>
                 )}
                 <div className="p-3">
-                  <div className="font-semibold leading-tight line-clamp-2">{g.name}</div>
-                  <div className="text-xs text-muted-foreground">{g.count} jeu{g.count > 1 ? "x" : ""}</div>
+                  <div className="font-semibold leading-tight line-clamp-2 uppercase">
+                    {g.name}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {g.count} jeu{g.count > 1 ? "x" : ""}
+                  </div>
                 </div>
               </Link>
             ))}
@@ -291,10 +322,11 @@ export default function Index() {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
+              // Sagas proposées en autocomplétion : on les normalise (MAJUSCULES)
               availableSagas={Array.from(
                 new Set(
                   games
-                    .map((g) => g.saga?.trim())
+                    .map((g) => normalizeSaga(g.saga))
                     .filter(Boolean) as string[]
                 )
               ).sort()}
