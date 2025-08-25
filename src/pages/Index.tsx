@@ -156,7 +156,7 @@ export default function Index() {
     try {
       const data = JSON.stringify(games, null, 2);
       const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const date = new Date().toISOString().slice(0, 10);
       a.href = url;
@@ -279,27 +279,31 @@ export default function Index() {
           />
         </div>
 
-        {/* === Bannière JEUX === */}
+        {/* === Bannière JEUX (sans overlay) === */}
         {jeuxGroup && (
           <Link
             to={`/s/${jeuxGroup.slug}`}
             className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+            aria-label="Aller à la section JEUX"
           >
-            <img
-              src="/banner_jeux_1920x500.jpg"
-              alt="Section JEUX"
-              className="w-full h-auto block max-h-[280px] lg:max-h-[200px] object-contain object-center"
-              loading="eager"
-              decoding="async"
-            />
-            <div className="absolute inset-0 flex items-end justify-start p-4 sm:p-6">
-              <div className="text-left">
-                <div className="text-xl sm:text-2xl font-extrabold tracking-wide text-white drop-shadow-lg">
-                  {jeuxGroup.name}
-                </div>
-                <div className="text-xs sm:text-sm text-white/90">
-                  {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
-                </div>
+            <picture>
+              {/* Optionnel : sources responsive si tu fournis ces fichiers */}
+              <source media="(min-width:1024px)" srcSet="/banner_jeux_1920x400.jpg" />
+              <source media="(min-width:640px)"  srcSet="/banner_jeux_1600x334.jpg" />
+              <img
+                src="/banner_jeux_1024x300.jpg"
+                alt="Section JEUX"
+                className="w-full h-auto max-h-[150px] sm:max-h-[170px] lg:max-h-[190px] object-contain object-center"
+                loading="eager"
+                decoding="async"
+              />
+            </picture>
+
+            {/* Légende en-dessous (texte clair, pas de calque au-dessus) */}
+            <div className="px-4 pb-3 pt-2">
+              <div className="text-sm font-semibold text-muted-foreground">JEUX</div>
+              <div className="text-xs text-muted-foreground/80">
+                {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
               </div>
             </div>
           </Link>
