@@ -21,7 +21,6 @@ import { GameForm } from "@/components/GameForm";
 
 import { slugify, normalizeSaga } from "@/lib/slug";
 
-// Noms d'affichage / slug pour la section sans-saga
 const SANS_SAGA_NAME = "JEUX";
 const SANS_SAGA_SLUG = "jeux";
 
@@ -67,15 +66,14 @@ export default function Index() {
 
   // ---- Groupage JEUX / SAGAS ----
   type SagaGroup = {
-    name: string; // affichage (majuscule)
-    slug: string; // /s/<slug>
+    name: string;
+    slug: string;
     items: GameDTO[];
     cover?: string;
     count: number;
   };
 
   const { jeuxGroup, sagaGroups } = useMemo(() => {
-    // applique les filtres globaux
     const filtered = games.filter((game) => {
       if (
         filters.search &&
@@ -103,7 +101,6 @@ export default function Index() {
     const sagas: SagaGroup[] = [];
 
     for (const [nameUpper, items] of map.entries()) {
-      // tri interne pour déterminer le "premier" jeu
       const sorted = [...items].sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -113,7 +110,8 @@ export default function Index() {
         return ac - bc;
       });
       const cover = sorted[0]?.coverUrl;
-      const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
+      const slug =
+        nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
 
       const group = { name: nameUpper, slug, items, cover, count: items.length };
       if (nameUpper === SANS_SAGA_NAME) jeuxGroup = group;
@@ -131,7 +129,6 @@ export default function Index() {
     try {
       const payload = {
         ...gameData,
-        // normalise la saga pour éviter CRASH/Crash
         saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
       };
 
@@ -168,7 +165,10 @@ export default function Index() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast({ title: "Export JSON", description: "La collection a été exportée." });
+      toast({
+        title: "Export JSON",
+        description: "La collection a été exportée.",
+      });
     } catch (e: any) {
       toast({
         title: "Export échoué",
@@ -223,7 +223,7 @@ export default function Index() {
             </div>
           </div>
 
-          {/* Actions & Ajouter */}
+          {/* Actions */}
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -270,7 +270,7 @@ export default function Index() {
           </div>
         </div>
 
-        {/* Search + Filters */}
+        {/* Filtres */}
         <div className="mb-3 sm:mb-4">
           <SearchAndFilters
             filters={filters}
@@ -279,32 +279,25 @@ export default function Index() {
           />
         </div>
 
-        {/* === JEUX : bannière unique (mobile + desktop) === */}
+        {/* === Bannière JEUX === */}
         {jeuxGroup && (
           <Link
             to={`/s/${jeuxGroup.slug}`}
             className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
           >
-            <picture>
-              <source media="(min-width: 1280px)" srcSet="/banner_jeux_1920x500.jpg" />
-              <source media="(min-width: 1024px)" srcSet="/banner_jeux_1600x450.jpg" />
-              <img
-                src="/banner_jeux_1024x360.jpg"
-                alt="Section JEUX"
-                className="absolute inset-0 h-full w-full object-cover"
-                style={{ objectPosition: "center 35%" }} // ajuste le cadrage si besoin
-                loading="eager"
-              />
-            </picture>
-
-            <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/30 to-transparent" />
-
-            <div className="relative flex min-h-[120px] sm:min-h-[140px] lg:min-h-[180px] items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+            <img
+              src="/banner_jeux_1920x500.jpg"
+              alt="Section JEUX"
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ objectPosition: "center 35%" }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent" />
+            <div className="relative flex min-h-[140px] sm:min-h-[180px] lg:min-h-[220px] items-center justify-between p-5 sm:p-8">
               <div>
-                <div className="text-base sm:text-lg lg:text-xl font-extrabold tracking-wide text-white">
+                <div className="text-xl sm:text-2xl font-extrabold tracking-wide text-white">
                   {jeuxGroup.name}
                 </div>
-                <div className="text-[11px] sm:text-xs lg:text-sm text-white/80">
+                <div className="text-xs sm:text-sm text-white/80">
                   {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
                 </div>
               </div>
@@ -315,7 +308,9 @@ export default function Index() {
         {/* Sagas */}
         <h2 className="text-lg font-semibold mb-3">Sagas</h2>
         {sagaGroups.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">Aucune saga.</div>
+          <div className="text-center py-12 text-muted-foreground">
+            Aucune saga.
+          </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
             {sagaGroups.map((g) => (
@@ -369,7 +364,7 @@ export default function Index() {
           </DialogContent>
         </Dialog>
 
-        {/* FAB mobile “+” */}
+        {/* FAB mobile */}
         <Button
           className="fixed sm:hidden bottom-4 right-4 rounded-full h-12 w-12 shadow-glow-primary"
           onClick={() => {
