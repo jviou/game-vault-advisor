@@ -24,13 +24,6 @@ import { slugify, normalizeSaga } from "@/lib/slug";
 const SANS_SAGA_NAME = "JEUX";
 const SANS_SAGA_SLUG = "jeux";
 
-// Chemins d'images de la bannière (placées dans /public)
-const BANNERS = {
-  mobile: "/banner_jeux_1024x360.jpg",
-  tablet: "/banner_jeux_1600x450.jpg",
-  desktop: "/banner_jeux_1920x500.jpg",
-};
-
 export default function Index() {
   const { toast } = useToast();
 
@@ -286,13 +279,38 @@ export default function Index() {
           />
         </div>
 
-        {/* === Bannière JEUX (image seule, pas d'overlay) === */}
-        {jeuxGroup && <BannerJeux jeuxSlug={jeuxGroup.slug} count={jeuxGroup.count} />}
+        {/* === Bannière JEUX === */}
+        {jeuxGroup && (
+          <Link
+            to={`/s/${jeuxGroup.slug}`}
+            className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+          >
+            <img
+              src="/banner_jeux_1920x500.jpg"
+              alt="Section JEUX"
+              className="w-full h-auto block max-h-[280px] lg:max-h-[200px] object-contain object-center"
+              loading="eager"
+              decoding="async"
+            />
+            <div className="absolute inset-0 flex items-end justify-start p-4 sm:p-6">
+              <div className="text-left">
+                <div className="text-xl sm:text-2xl font-extrabold tracking-wide text-white drop-shadow-lg">
+                  {jeuxGroup.name}
+                </div>
+                <div className="text-xs sm:text-sm text-white/90">
+                  {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
+                </div>
+              </div>
+            </div>
+          </Link>
+        )}
 
         {/* Sagas */}
         <h2 className="text-lg font-semibold mb-3">Sagas</h2>
         {sagaGroups.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">Aucune saga.</div>
+          <div className="text-center py-12 text-muted-foreground">
+            Aucune saga.
+          </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
             {sagaGroups.map((g) => (
@@ -336,7 +354,11 @@ export default function Index() {
                 setEditingGame(null);
               }}
               availableSagas={Array.from(
-                new Set(games.map((g) => normalizeSaga(g.saga)).filter(Boolean) as string[])
+                new Set(
+                  games
+                    .map((g) => normalizeSaga(g.saga))
+                    .filter(Boolean) as string[]
+                )
               ).sort()}
             />
           </DialogContent>
@@ -355,50 +377,5 @@ export default function Index() {
         </Button>
       </div>
     </div>
-  );
-}
-
-/** Bannière JEUX – image responsive, pas d’overlay, fallback si image introuvable */
-function BannerJeux({ jeuxSlug, count }: { jeuxSlug: string; count: number }) {
-  const [failed, setFailed] = useState(false);
-
-  if (failed) {
-    // Fallback simple si l’image manque : petit bandeau neutre
-    return (
-      <Link
-        to={`/s/${jeuxSlug}`}
-        className="mb-8 block rounded-2xl border border-border bg-gradient-card p-6"
-      >
-        <div className="flex items-end justify-between">
-          <div>
-            <div className="text-xl font-extrabold">JEUX</div>
-            <div className="text-sm text-muted-foreground">
-              {count} jeu{count > 1 ? "x" : ""}
-            </div>
-          </div>
-        </div>
-      </Link>
-    );
-  }
-
-  return (
-    <Link
-      to={`/s/${jeuxSlug}`}
-      className="mb-8 block rounded-2xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition"
-      aria-label="Section JEUX"
-    >
-      <picture>
-        <source media="(min-width:1024px)" srcSet={BANNERS.desktop} />
-        <source media="(min-width:640px)" srcSet={BANNERS.tablet} />
-        <img
-          src={BANNERS.mobile}
-          alt="Section JEUX"
-          className="w-full h-auto block"
-          onError={() => setFailed(true)}
-          loading="eager"
-          decoding="async"
-        />
-      </picture>
-    </Link>
   );
 }
