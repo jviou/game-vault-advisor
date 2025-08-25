@@ -21,6 +21,7 @@ import { GameForm } from "@/components/GameForm";
 
 import { slugify, normalizeSaga } from "@/lib/slug";
 
+// Noms d'affichage / slug pour la section sans-saga
 const SANS_SAGA_NAME = "JEUX";
 const SANS_SAGA_SLUG = "jeux";
 
@@ -66,14 +67,15 @@ export default function Index() {
 
   // ---- Groupage JEUX / SAGAS ----
   type SagaGroup = {
-    name: string;
-    slug: string;
+    name: string; // affichage (majuscule)
+    slug: string; // /s/<slug>
     items: GameDTO[];
     cover?: string;
     count: number;
   };
 
   const { jeuxGroup, sagaGroups } = useMemo(() => {
+    // applique les filtres globaux
     const filtered = games.filter((game) => {
       if (
         filters.search &&
@@ -101,6 +103,7 @@ export default function Index() {
     const sagas: SagaGroup[] = [];
 
     for (const [nameUpper, items] of map.entries()) {
+      // tri interne pour déterminer le "premier" jeu
       const sorted = [...items].sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -110,8 +113,7 @@ export default function Index() {
         return ac - bc;
       });
       const cover = sorted[0]?.coverUrl;
-      const slug =
-        nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
+      const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
 
       const group = { name: nameUpper, slug, items, cover, count: items.length };
       if (nameUpper === SANS_SAGA_NAME) jeuxGroup = group;
@@ -129,6 +131,7 @@ export default function Index() {
     try {
       const payload = {
         ...gameData,
+        // normalise la saga pour éviter CRASH/Crash
         saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
       };
 
@@ -276,72 +279,37 @@ export default function Index() {
           />
         </div>
 
-        {/* === JEUX : Mobile = carte ; Desktop = bannière fine === */}
+        {/* === JEUX : bannière unique (mobile + desktop) === */}
         {jeuxGroup && (
-          <>
-            {/* Mobile : carte (comme avant) */}
-            <Link
-              to={`/s/${jeuxGroup.slug}`}
-              className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block sm:hidden mb-6"
-            >
-              {jeuxGroup.cover ? (
-                <img
-                  src={jeuxGroup.cover}
-                  alt={jeuxGroup.name}
-                  className="w-full aspect-[3/4] object-cover"
-                />
-              ) : (
-                <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
-                  Pas de jaquette
-                </div>
-              )}
-              <div className="p-3">
-                <div className="font-semibold leading-tight uppercase">
+          <Link
+            to={`/s/${jeuxGroup.slug}`}
+            className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+          >
+            <picture>
+              <source media="(min-width: 1280px)" srcSet="/banner_jeux_1920x500.jpg" />
+              <source media="(min-width: 1024px)" srcSet="/banner_jeux_1600x450.jpg" />
+              <img
+                src="/banner_jeux_1024x360.jpg"
+                alt="Section JEUX"
+                className="absolute inset-0 h-full w-full object-cover"
+                style={{ objectPosition: "center 35%" }} // ajuste le cadrage si besoin
+                loading="eager"
+              />
+            </picture>
+
+            <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/30 to-transparent" />
+
+            <div className="relative flex min-h-[120px] sm:min-h-[140px] lg:min-h-[180px] items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+              <div>
+                <div className="text-base sm:text-lg lg:text-xl font-extrabold tracking-wide text-white">
                   {jeuxGroup.name}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-[11px] sm:text-xs lg:text-sm text-white/80">
                   {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
                 </div>
               </div>
-            </Link>
-
-            {/* Desktop : bannière compacte */}
-            <Link
-              to={`/s/${jeuxGroup.slug}`}
-              className="relative hidden sm:block mb-8 w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
-            >
-              {/* Image de fond : place ces fichiers dans /public */}
-              {/* banner_jeux_1920x500.jpg, banner_jeux_1600x450.jpg, banner_jeux_1024x360.jpg */}
-              <picture>
-                <source
-                  media="(min-width: 1280px)"
-                  srcSet="/banner_jeux_1920x500.jpg"
-                />
-                <source
-                  media="(min-width: 1024px)"
-                  srcSet="/banner_jeux_1600x450.jpg"
-                />
-                <img
-                  src="/banner_jeux_1024x360.jpg"
-                  alt="Section JEUX"
-                  className="absolute inset-0 w-full h-full object-cover"
-                  loading="eager"
-                />
-              </picture>
-
-              <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/30 to-transparent" />
-              <div className="relative flex min-h-[140px] lg:min-h-[180px] items-center justify-between px-5 py-4 lg:px-8">
-                <div>
-                  <div className="text-lg lg:text-xl font-extrabold tracking-wide text-white">
-                    {jeuxGroup.name}
-                  </div>
-                  <div className="text-xs lg:text-sm text-white/80">
-                    {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
-                  </div>
-                </div>
-              </div>
-            </Link>
-          </>
+            </div>
+          </Link>
         )}
 
         {/* Sagas */}
