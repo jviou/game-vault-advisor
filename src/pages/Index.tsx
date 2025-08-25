@@ -279,13 +279,12 @@ export default function Index() {
           />
         </div>
 
-        {/* === Bannière JEUX (sans overlay) === */}
+        {/* === Bannière JEUX === */}
         {jeuxGroup && (
           <Link
             to={`/s/${jeuxGroup.slug}`}
             className="mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition"
           >
-            {/* Image responsive */}
             <picture>
               <source
                 media="(max-width: 640px)"
@@ -299,22 +298,11 @@ export default function Index() {
                 src="/banner_jeux_1920x500.jpg"
                 alt="Section JEUX"
                 className="w-full object-cover"
-                // Hauteur plus compacte sur desktop
                 style={{
-                  maxHeight: 220, // desktop
+                  maxHeight: 220,
                 }}
               />
             </picture>
-
-            {/* Légende (sous l'image, pas d'overlay) */}
-            <div className="p-3 sm:p-4">
-              <div className="font-semibold uppercase leading-tight">
-                {jeuxGroup.name}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
-              </div>
-            </div>
           </Link>
         )}
 
@@ -368,7 +356,9 @@ export default function Index() {
               }}
               availableSagas={Array.from(
                 new Set(
-                  games.map((g) => normalizeSaga(g.saga)).filter(Boolean) as string[]
+                  games
+                    .map((g) => normalizeSaga(g.saga))
+                    .filter(Boolean) as string[]
                 )
               ).sort()}
             />
