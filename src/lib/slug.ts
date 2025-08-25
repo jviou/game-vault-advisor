@@ -64,3 +64,10 @@ export function fromSlugSaga(slug?: string): string {
   if (s === "" || s === "jeux") return "";
   return s.replace(/-/g, " ").trim();
 }
+
+/** Uniformise le nom de saga : trim + Title Case */
+export function normalizeSaga(input?: string): string {
+  if (!input) return "";
+  const s = input.trim().toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
