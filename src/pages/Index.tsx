@@ -66,8 +66,8 @@ export default function Index() {
 
   // ---- Groupage JEUX / SAGAS ----
   type SagaGroup = {
-    name: string;     // affichage (majuscule)
-    slug: string;     // /s/<slug>
+    name: string;
+    slug: string;
     items: GameDTO[];
     cover?: string;
     count: number;
@@ -75,8 +75,16 @@ export default function Index() {
 
   const { jeuxGroup, sagaGroups } = useMemo(() => {
     const filtered = games.filter((game) => {
-      if (filters.search && !game.title?.toLowerCase().includes(filters.search.toLowerCase())) return false;
-      if (filters.genres.length > 0 && !filters.genres.some((g) => (game.genres || []).includes(g))) return false;
+      if (
+        filters.search &&
+        !game.title?.toLowerCase().includes(filters.search.toLowerCase())
+      )
+        return false;
+      if (
+        filters.genres.length > 0 &&
+        !filters.genres.some((g) => (game.genres || []).includes(g))
+      )
+        return false;
       if ((game.rating ?? 0) < filters.minRating) return false;
       if (filters.platform && game.platform !== filters.platform) return false;
       return true;
@@ -102,7 +110,8 @@ export default function Index() {
         return ac - bc;
       });
       const cover = sorted[0]?.coverUrl;
-      const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
+      const slug =
+        nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
 
       const group = { name: nameUpper, slug, items, cover, count: items.length };
       if (nameUpper === SANS_SAGA_NAME) jeuxGroup = group;
@@ -267,21 +276,19 @@ export default function Index() {
           />
         </div>
 
-        {/* === SECTION JEUX : tuile mobile + bannière desktop === */}
+        {/* === JEUX : Mobile = carte ; Desktop = bannière fine === */}
         {jeuxGroup && (
           <>
-            {/* Tuile mobile/tablette (inchangé) */}
+            {/* Mobile : carte (comme avant) */}
             <Link
               to={`/s/${jeuxGroup.slug}`}
-              className="lg:hidden group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block mb-6"
-              aria-label={`Ouvrir ${jeuxGroup.name}`}
+              className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block sm:hidden mb-6"
             >
               {jeuxGroup.cover ? (
                 <img
                   src={jeuxGroup.cover}
                   alt={jeuxGroup.name}
-                  className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform"
-                  loading="lazy"
+                  className="w-full aspect-[3/4] object-cover"
                 />
               ) : (
                 <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
@@ -289,7 +296,7 @@ export default function Index() {
                 </div>
               )}
               <div className="p-3">
-                <div className="font-semibold leading-tight line-clamp-2 uppercase">
+                <div className="font-semibold leading-tight uppercase">
                   {jeuxGroup.name}
                 </div>
                 <div className="text-xs text-muted-foreground">
@@ -298,29 +305,40 @@ export default function Index() {
               </div>
             </Link>
 
-            {/* Bannière desktop */}
+            {/* Desktop : bannière compacte */}
             <Link
               to={`/s/${jeuxGroup.slug}`}
-              className="hidden lg:block mb-8 rounded-2xl overflow-hidden relative border border-border shadow-card hover:shadow-card-hover transition"
-              aria-label={`Ouvrir ${jeuxGroup.name}`}
+              className="relative hidden sm:block mb-8 w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
             >
+              {/* Image de fond : place ces fichiers dans /public */}
+              {/* banner_jeux_1920x500.jpg, banner_jeux_1600x450.jpg, banner_jeux_1024x360.jpg */}
               <picture>
-                <source media="(min-width: 1280px)" srcSet="/banner_jeux_1920x500.jpg" />
-                <source media="(min-width: 1024px)" srcSet="/banner_jeux_1600x450.jpg" />
+                <source
+                  media="(min-width: 1280px)"
+                  srcSet="/banner_jeux_1920x500.jpg"
+                />
+                <source
+                  media="(min-width: 1024px)"
+                  srcSet="/banner_jeux_1600x450.jpg"
+                />
                 <img
                   src="/banner_jeux_1024x360.jpg"
-                  alt={jeuxGroup.name}
-                  className="w-full h-[340px] xl:h-[380px] object-cover object-[50%_35%]"
+                  alt="Section JEUX"
+                  className="absolute inset-0 w-full h-full object-cover"
                   loading="eager"
                 />
               </picture>
 
-              <div className="absolute inset-0 bg-gradient-to-r from-black/65 via-black/35 to-transparent" />
-              <div className="absolute left-8 top-1/2 -translate-y-1/2">
-                <h2 className="text-3xl font-bold tracking-wide">{jeuxGroup.name}</h2>
-                <p className="text-sm text-muted-foreground">
-                  {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
-                </p>
+              <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/30 to-transparent" />
+              <div className="relative flex min-h-[140px] lg:min-h-[180px] items-center justify-between px-5 py-4 lg:px-8">
+                <div>
+                  <div className="text-lg lg:text-xl font-extrabold tracking-wide text-white">
+                    {jeuxGroup.name}
+                  </div>
+                  <div className="text-xs lg:text-sm text-white/80">
+                    {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
+                  </div>
+                </div>
               </div>
             </Link>
           </>
@@ -373,7 +391,11 @@ export default function Index() {
                 setEditingGame(null);
               }}
               availableSagas={Array.from(
-                new Set(games.map((g) => normalizeSaga(g.saga)).filter(Boolean) as string[])
+                new Set(
+                  games
+                    .map((g) => normalizeSaga(g.saga))
+                    .filter(Boolean) as string[]
+                )
               ).sort()}
             />
           </DialogContent>
