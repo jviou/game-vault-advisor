@@ -1,4 +1,3 @@
-// src/pages/SagaPage.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, GripVertical, MoreVertical, Pencil, Trash2 } from "lucide-react";
@@ -17,37 +16,49 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 
-import { fromSlugSaga } from "@/lib/slug";
+import { normalizeSaga } from "@/lib/slug";
+
+// util
+const fromSlug = (slug?: string) =>
+  (slug || "").replace(/-/g, " ").replace(/\s+/g, " ").trim();
 
 export default function SagaPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // slug "jeux" => "" (clé logique), sinon "dragon-quest" => "dragon quest"
-  const sagaKey = useMemo(() => fromSlugSaga(slug), [slug]);
-  const sagaTitle = (sagaKey === "" ? "JEUX" : sagaKey).toUpperCase();
+  // nom “humain” depuis l’URL, puis normalisé
+  const sagaHuman = useMemo(() => fromSlug(slug), [slug]);
+  const sagaCanonical = useMemo(() => normalizeSaga(sagaHuman), [sagaHuman]);
 
   const [games, setGames] = useState<GameDTO[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
   const [reorderMode, setReorderMode] = useState(false);
 
-  // NEW: fiche “jeu”
+  // fiche “jeu”
   const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
 
   async function refresh() {
     try {
       const data = await listGames();
-      const only = data.filter((g) => (g.saga ?? "").trim().toLowerCase() === sagaKey.toLowerCase());
+
+      // on compare avec un nom de saga **normalisé** pour éviter
+      // “CRASH BANDICOOT” vs “Crash Bandicoot”
+      const only = data.filter(
+        (g) => normalizeSaga(g.saga) === sagaCanonical
+      );
+
+      // tri par order puis createdAt
       only.sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
         if (ao !== bo) return ao - bo;
         const ac = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bc = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return ac - bc; // plus ancien d’abord (garde ta logique d’avant)
+        return ac - bc;
       });
+
       setGames(only);
     } catch (e: any) {
       toast({
@@ -65,11 +76,14 @@ export default function SagaPage() {
     form: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
     try {
+      // 🔐 Toujours sauver la saga **normalisée**
+      const payload = { ...form, saga: normalizeSaga(form.saga) };
+
       if (editingGame?.id) {
-        await updateGame(editingGame.id, form);
+        await updateGame(editingGame.id, payload);
         toast({ title: "Jeu mis à jour" });
       } else {
-        await createGame(form);
+        await createGame(payload);
         toast({ title: "Jeu ajouté" });
       }
       setIsFormOpen(false);
@@ -135,11 +149,15 @@ export default function SagaPage() {
     setDragOverIndex(null);
     if (fromIndex == null || fromIndex === toIndex) return;
 
+    // nouveau tableau réordonné
     const arr = [...games];
     const [moved] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, moved);
 
-    await Promise.all(arr.map((g, idx) => updateGame(g.id, { ...g, order: idx })));
+    // normalise order = index
+    await Promise.all(
+      arr.map((g, idx) => updateGame(g.id, { ...g, order: idx }))
+    );
     refresh();
   };
   // --------------------------------------------------------------
@@ -155,7 +173,7 @@ export default function SagaPage() {
             </Button>
             <div>
               <h1 className="text-xl sm:text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-                {sagaTitle}
+                {sagaCanonical || "Saga"}
               </h1>
               <p className="text-muted-foreground text-sm">
                 {games.length} jeu{games.length > 1 ? "x" : ""}
@@ -198,7 +216,9 @@ export default function SagaPage() {
             {games.map((g, idx) => {
               const dragging = reorderMode;
               const dragClasses =
-                reorderMode && dragOverIndex === idx ? "ring-2 ring-primary" : "";
+                reorderMode && dragOverIndex === idx
+                  ? "ring-2 ring-primary"
+                  : "";
 
               return (
                 <div
@@ -275,7 +295,10 @@ export default function SagaPage() {
                       )}
                       {!!g.genres?.length &&
                         g.genres.slice(0, 2).map((tag) => (
-                          <span key={tag} className="rounded px-2 py-0.5 bg-secondary/40">
+                          <span
+                            key={tag}
+                            className="rounded px-2 py-0.5 bg-secondary/40"
+                          >
                             {tag}
                           </span>
                         ))}
@@ -326,7 +349,8 @@ export default function SagaPage() {
                   rating: 3,
                   genres: [],
                   platform: "",
-                  saga: sagaKey, // << important : "" pour JEUX
+                  // 🔐 prérempli avec la saga **normalisée**
+                  saga: sagaCanonical,
                   order:
                     games.length > 0
                       ? (games[games.length - 1].order ?? games.length - 1) + 1
@@ -338,7 +362,7 @@ export default function SagaPage() {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              availableSagas={[]} // garde tel quel si tu n'en as pas besoin ici
+              availableSagas={[]}
             />
           </DialogContent>
         </Dialog>
@@ -372,7 +396,7 @@ export default function SagaPage() {
                     {typeof viewingGame.rating === "number" && (
                       <div>Note : {viewingGame.rating}/5</div>
                     )}
-                    {viewingGame.saga && <div>Saga : {viewingGame.saga}</div>}
+                    {viewingGame.saga && <div>Saga : {normalizeSaga(viewingGame.saga)}</div>}
                   </div>
 
                   {!!viewingGame.genres?.length && (
