@@ -279,29 +279,21 @@ export default function Index() {
           />
         </div>
 
-        {/* === Bannière JEUX === */}
+        {/* === Bannière JEUX (image fixe, responsive) === */}
         {jeuxGroup && (
           <Link
             to={`/s/${jeuxGroup.slug}`}
-            className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+            className="mb-8 block w-full overflow-hidden rounded-2xl border border-border shadow-card hover:shadow-card-hover transition"
           >
-            <img
-              src="/banner_jeux_1920x500.jpg"
-              alt="Section JEUX"
-              className="absolute inset-0 h-full w-full object-cover"
-              style={{ objectPosition: "center 50%" }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent" />
-            <div className="relative flex min-h-[140px] sm:min-h-[180px] lg:min-h-[220px] items-center justify-between p-5 sm:p-8">
-              <div>
-                <div className="text-xl sm:text-2xl font-extrabold tracking-wide text-white">
-                  {jeuxGroup.name}
-                </div>
-                <div className="text-xs sm:text-sm text-white/80">
-                  {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
-                </div>
-              </div>
-            </div>
+            <picture>
+              <source media="(min-width:1280px)" srcSet="/banner_jeux_1920x500.jpg" />
+              <source media="(min-width:768px)" srcSet="/banner_jeux_1600x450.jpg" />
+              <img
+                src="/banner_jeux_1024x360.jpg"
+                alt="Section JEUX"
+                className="w-full h-auto block"
+              />
+            </picture>
           </Link>
         )}
 
