@@ -1,3 +1,4 @@
+// src/pages/Index.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Gamepad2, Plus, MoreVertical, Upload, Download } from "lucide-react";
@@ -39,6 +40,7 @@ export default function Index() {
     sortOrder: "desc",
   });
 
+  // ---- Chargement ----
   async function refresh() {
     try {
       const data = await listGames();
@@ -55,25 +57,35 @@ export default function Index() {
     refresh();
   }, []);
 
+  // ---- Plateformes disponibles pour le filtre ----
   const availablePlatforms = useMemo(() => {
     return Array.from(
       new Set(games.map((g) => g.platform).filter(Boolean) as string[])
     ).sort();
   }, [games]);
 
+  // ---- Groupage JEUX / SAGAS ----
   type SagaGroup = {
-    name: string;
-    slug: string;
+    name: string;     // affichage (majuscule)
+    slug: string;     // /s/<slug>
     items: GameDTO[];
     cover?: string;
     count: number;
   };
 
-  // ---- Séparation JEUX + SAGAS ----
   const { jeuxGroup, sagaGroups } = useMemo(() => {
+    // applique les filtres globaux
     const filtered = games.filter((game) => {
-      if (filters.search && !game.title?.toLowerCase().includes(filters.search.toLowerCase())) return false;
-      if (filters.genres.length > 0 && !filters.genres.some((g) => (game.genres || []).includes(g))) return false;
+      if (
+        filters.search &&
+        !game.title?.toLowerCase().includes(filters.search.toLowerCase())
+      )
+        return false;
+      if (
+        filters.genres.length > 0 &&
+        !filters.genres.some((g) => (game.genres || []).includes(g))
+      )
+        return false;
       if ((game.rating ?? 0) < filters.minRating) return false;
       if (filters.platform && game.platform !== filters.platform) return false;
       return true;
@@ -90,6 +102,8 @@ export default function Index() {
     const sagas: SagaGroup[] = [];
 
     for (const [nameUpper, items] of map.entries()) {
+      // on garde le même choix de cover (1er jeu trié order/createdAt) même
+      // si on ne l'utilise plus pour JEUX
       const sorted = [...items].sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -102,22 +116,22 @@ export default function Index() {
       const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
 
       const group = { name: nameUpper, slug, items, cover, count: items.length };
-
-      if (nameUpper === SANS_SAGA_NAME) {
-        jeuxGroup = group;
-      } else {
-        sagas.push(group);
-      }
+      if (nameUpper === SANS_SAGA_NAME) jeuxGroup = group;
+      else sagas.push(group);
     }
 
     sagas.sort((a, b) => a.name.localeCompare(b.name));
     return { jeuxGroup, sagaGroups: sagas };
   }, [games, filters]);
 
-  const handleSaveGame = async (gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">) => {
+  // ---- Ajouter / Modifier ----
+  const handleSaveGame = async (
+    gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
+  ) => {
     try {
       const payload = {
         ...gameData,
+        // on normalise la saga pour éviter les doublons CRASH/Crash
         saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
       };
 
@@ -140,13 +154,60 @@ export default function Index() {
     }
   };
 
-  const handleExportAll = () => { /* ton code export JSON inchangé */ };
-  const handleImport = (file: File) => { /* ton code import JSON inchangé */ };
+  // ---- Export JSON ----
+  const handleExportAll = () => {
+    try {
+      const data = JSON.stringify(games, null, 2);
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const date = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `game-vault_${date}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Export JSON", description: "La collection a été exportée." });
+    } catch (e: any) {
+      toast({
+        title: "Export échoué",
+        description: e?.message || "Impossible d’exporter le JSON.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // ---- Import JSON ----
+  const handleImport = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const payload = JSON.parse(String(reader.result)) as GameDTO[];
+        for (const g of payload) {
+          const { id, createdAt, updatedAt, ...rest } = g as any;
+          await createGame({
+            ...rest,
+            saga: rest.saga ? normalizeSaga(rest.saga) : undefined,
+          });
+        }
+        toast({ title: "Import JSON", description: "Import terminé." });
+        refresh();
+      } catch (e: any) {
+        toast({
+          title: "Import échoué",
+          description: e?.message || "Le fichier n’est pas valide.",
+          variant: "destructive",
+        });
+      }
+    };
+    reader.readAsText(file);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-hero">
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
-        {/* --- Header --- */}
+        {/* Header */}
         <div className="flex items-center justify-between mb-6 sm:mb-8 gap-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-gradient-primary rounded-lg shadow-glow-primary">
@@ -162,6 +223,7 @@ export default function Index() {
             </div>
           </div>
 
+          {/* Actions & Ajouter */}
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -172,7 +234,10 @@ export default function Index() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <label className="w-full">
-                  <input type="file" accept="application/json" className="hidden"
+                  <input
+                    type="file"
+                    accept="application/json"
+                    className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (f) handleImport(f);
@@ -180,11 +245,13 @@ export default function Index() {
                     }}
                   />
                   <DropdownMenuItem className="cursor-pointer">
-                    <Upload className="w-4 h-4 mr-2" /> Importer JSON
+                    <Upload className="w-4 h-4 mr-2" />
+                    Importer JSON
                   </DropdownMenuItem>
                 </label>
                 <DropdownMenuItem onClick={handleExportAll}>
-                  <Download className="w-4 h-4 mr-2" /> Exporter JSON
+                  <Download className="w-4 h-4 mr-2" />
+                  Exporter JSON
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -197,52 +264,51 @@ export default function Index() {
               className="gap-2 shadow-glow-primary hidden sm:flex"
               title="Ajouter"
             >
-              <Plus className="w-4 h-4" /> Ajouter
+              <Plus className="w-4 h-4" />
+              Ajouter
             </Button>
           </div>
         </div>
 
-        {/* Barre de recherche */}
+        {/* Search + Filters */}
         <div className="mb-3 sm:mb-4">
-          <SearchAndFilters filters={filters} onFiltersChange={setFilters} availablePlatforms={availablePlatforms} />
+          <SearchAndFilters
+            filters={filters}
+            onFiltersChange={setFilters}
+            availablePlatforms={availablePlatforms}
+          />
         </div>
 
-        {/* --- Section JEUX (bannière horizontale) --- */}
+        {/* === BANNIÈRE JEUX (image fixe) === */}
         {jeuxGroup && (
           <Link
             to={`/s/${jeuxGroup.slug}`}
             className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
           >
-            {/* Image de fond */}
-            {jeuxGroup.cover ? (
-              <img
-                src={jeuxGroup.cover}
-                alt={jeuxGroup.name}
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            ) : (
-              <div className="absolute inset-0 h-full w-full bg-muted" />
-            )}
-
-            {/* Overlay dégradé */}
+            {/* Image de fond : place /public/jeux-banner.jpg */}
+            <img
+              src="/jeux-banner.jpg"
+              alt="Section JEUX"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            {/* Dégradé de lecture */}
             <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent" />
-
             {/* Contenu */}
             <div className="relative flex min-h-[160px] items-center justify-between p-5 sm:min-h-[200px] sm:p-8">
               <div>
-                <div className="text-xl font-extrabold tracking-wide text-white sm:text-2xl">
+                <div className="text-xl sm:text-2xl font-extrabold tracking-wide text-white">
                   {jeuxGroup.name}
                 </div>
-                <div className="text-xs text-white/80 sm:text-sm">
+                <div className="text-xs sm:text-sm text-white/80">
                   {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
                 </div>
               </div>
-              <Button className="shadow-glow-primary">Voir</Button>
+              {/* (pas de bouton "Voir" : toute la bannière est cliquable) */}
             </div>
           </Link>
         )}
 
-        {/* --- Section Sagas --- */}
+        {/* Sagas */}
         <h2 className="text-lg font-semibold mb-3">Sagas</h2>
         {sagaGroups.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">Aucune saga.</div>
@@ -266,15 +332,19 @@ export default function Index() {
                   </div>
                 )}
                 <div className="p-3">
-                  <div className="font-semibold leading-tight line-clamp-2 uppercase">{g.name}</div>
-                  <div className="text-xs text-muted-foreground">{g.count} jeu{g.count > 1 ? "x" : ""}</div>
+                  <div className="font-semibold leading-tight line-clamp-2 uppercase">
+                    {g.name}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {g.count} jeu{g.count > 1 ? "x" : ""}
+                  </div>
                 </div>
               </Link>
             ))}
           </div>
         )}
 
-        {/* --- Dialog Ajouter/Modifier --- */}
+        {/* Dialog Ajouter/Modifier */}
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <GameForm
@@ -284,12 +354,18 @@ export default function Index() {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              availableSagas={Array.from(new Set(games.map((g) => normalizeSaga(g.saga)).filter(Boolean) as string[])).sort()}
+              availableSagas={Array.from(
+                new Set(
+                  games
+                    .map((g) => normalizeSaga(g.saga))
+                    .filter(Boolean) as string[]
+                )
+              ).sort()}
             />
           </DialogContent>
         </Dialog>
 
-        {/* --- FAB mobile --- */}
+        {/* FAB mobile “+” */}
         <Button
           className="fixed sm:hidden bottom-4 right-4 rounded-full h-12 w-12 shadow-glow-primary"
           onClick={() => {
