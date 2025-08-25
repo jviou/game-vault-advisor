@@ -207,33 +207,39 @@ export default function Index() {
           <SearchAndFilters filters={filters} onFiltersChange={setFilters} availablePlatforms={availablePlatforms} />
         </div>
 
-        {/* --- Section JEUX (toujours en premier, si non vide) --- */}
+        {/* --- Section JEUX (bannière horizontale) --- */}
         {jeuxGroup && (
-          <>
-            <h2 className="text-lg font-semibold mb-3">{jeuxGroup.name}</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 mb-8">
-              <Link
-                to={`/s/${jeuxGroup.slug}`}
-                className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
-              >
-                {jeuxGroup.cover ? (
-                  <img
-                    src={jeuxGroup.cover}
-                    alt={jeuxGroup.name}
-                    className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform"
-                  />
-                ) : (
-                  <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
-                    Pas de jaquette
-                  </div>
-                )}
-                <div className="p-3">
-                  <div className="font-semibold leading-tight line-clamp-2 uppercase">{jeuxGroup.name}</div>
-                  <div className="text-xs text-muted-foreground">{jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}</div>
+          <Link
+            to={`/s/${jeuxGroup.slug}`}
+            className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+          >
+            {/* Image de fond */}
+            {jeuxGroup.cover ? (
+              <img
+                src={jeuxGroup.cover}
+                alt={jeuxGroup.name}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+            ) : (
+              <div className="absolute inset-0 h-full w-full bg-muted" />
+            )}
+
+            {/* Overlay dégradé */}
+            <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent" />
+
+            {/* Contenu */}
+            <div className="relative flex min-h-[160px] items-center justify-between p-5 sm:min-h-[200px] sm:p-8">
+              <div>
+                <div className="text-xl font-extrabold tracking-wide text-white sm:text-2xl">
+                  {jeuxGroup.name}
                 </div>
-              </Link>
+                <div className="text-xs text-white/80 sm:text-sm">
+                  {jeuxGroup.count} jeu{jeuxGroup.count > 1 ? "x" : ""}
+                </div>
+              </div>
+              <Button className="shadow-glow-primary">Voir</Button>
             </div>
-          </>
+          </Link>
         )}
 
         {/* --- Section Sagas --- */}
