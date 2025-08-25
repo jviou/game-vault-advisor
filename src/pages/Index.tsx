@@ -289,7 +289,7 @@ export default function Index() {
               src="/banner_jeux_1920x500.jpg"
               alt="Section JEUX"
               className="absolute inset-0 h-full w-full object-cover"
-              style={{ objectPosition: "center 45%" }}
+              style={{ objectPosition: "center 50%" }}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent" />
             <div className="relative flex min-h-[140px] sm:min-h-[180px] lg:min-h-[220px] items-center justify-between p-5 sm:p-8">
