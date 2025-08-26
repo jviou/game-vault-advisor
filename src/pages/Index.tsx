@@ -1,4 +1,3 @@
-// src/pages/Index.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Gamepad2, Plus, MoreVertical, Upload, Download } from "lucide-react";
@@ -40,7 +39,7 @@ export default function Index() {
     sortOrder: "desc",
   });
 
-  // ---- Chargement ----
+  // ---- Load ----
   async function refresh() {
     try {
       const data = await listGames();
@@ -57,41 +56,39 @@ export default function Index() {
     refresh();
   }, []);
 
-  // ---- Plateformes disponibles pour le filtre ----
+  // ---- Platforms for filters ----
   const availablePlatforms = useMemo(() => {
     return Array.from(
       new Set(games.map((g) => g.platform).filter(Boolean) as string[])
     ).sort();
   }, [games]);
 
-  // ---- Groupage JEUX / SAGAS ----
+  // ---- Filtering (game-level) ----
+  const matchingGames: GameDTO[] = useMemo(() => {
+    const term = filters.search.trim().toLowerCase();
+    return games.filter((game) => {
+      if (term && !game.title?.toLowerCase().includes(term)) return false;
+      if (filters.genres.length > 0 && !filters.genres.some((g) => (game.genres || []).includes(g))) return false;
+      if ((game.rating ?? 0) < filters.minRating) return false;
+      if (filters.platform && game.platform !== filters.platform) return false;
+      return true;
+    });
+  }, [games, filters]);
+
+  const hasActiveSearch = filters.search.trim().length > 0;
+
+  // ---- Grouping into sagas from the already-filtered list ----
   type SagaGroup = {
-    name: string;
-    slug: string;
+    name: string;     // display (UPPERCASE)
+    slug: string;     // /s/<slug>
     items: GameDTO[];
     cover?: string;
     count: number;
   };
 
   const { jeuxGroup, sagaGroups } = useMemo(() => {
-    const filtered = games.filter((game) => {
-      if (
-        filters.search &&
-        !game.title?.toLowerCase().includes(filters.search.toLowerCase())
-      )
-        return false;
-      if (
-        filters.genres.length > 0 &&
-        !filters.genres.some((g) => (game.genres || []).includes(g))
-      )
-        return false;
-      if ((game.rating ?? 0) < filters.minRating) return false;
-      if (filters.platform && game.platform !== filters.platform) return false;
-      return true;
-    });
-
     const map = new Map<string, GameDTO[]>();
-    for (const g of filtered) {
+    for (const g of matchingGames) {
       const key = normalizeSaga(g.saga) || SANS_SAGA_NAME;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(g);
@@ -110,8 +107,7 @@ export default function Index() {
         return ac - bc;
       });
       const cover = sorted[0]?.coverUrl;
-      const slug =
-        nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
+      const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
 
       const group = { name: nameUpper, slug, items, cover, count: items.length };
       if (nameUpper === SANS_SAGA_NAME) jeuxGroup = group;
@@ -120,9 +116,9 @@ export default function Index() {
 
     sagas.sort((a, b) => a.name.localeCompare(b.name));
     return { jeuxGroup, sagaGroups: sagas };
-  }, [games, filters]);
+  }, [matchingGames]);
 
-  // ---- Ajouter / Modifier ----
+  // ---- Create / update ----
   const handleSaveGame = async (
     gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
@@ -151,7 +147,7 @@ export default function Index() {
     }
   };
 
-  // ---- Export JSON ----
+  // ---- Export ----
   const handleExportAll = () => {
     try {
       const data = JSON.stringify(games, null, 2);
@@ -165,10 +161,7 @@ export default function Index() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast({
-        title: "Export JSON",
-        description: "La collection a été exportée.",
-      });
+      toast({ title: "Export JSON", description: "La collection a été exportée." });
     } catch (e: any) {
       toast({
         title: "Export échoué",
@@ -178,7 +171,7 @@ export default function Index() {
     }
   };
 
-  // ---- Import JSON ----
+  // ---- Import ----
   const handleImport = (file: File) => {
     const reader = new FileReader();
     reader.onload = async () => {
@@ -202,6 +195,12 @@ export default function Index() {
       }
     };
     reader.readAsText(file);
+  };
+
+  // --- helpers for result links ---
+  const sagaSlugFor = (g: GameDTO) => {
+    const nameUpper = normalizeSaga(g.saga) || SANS_SAGA_NAME;
+    return nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
   };
 
   return (
@@ -270,7 +269,7 @@ export default function Index() {
           </div>
         </div>
 
-        {/* Filtres */}
+        {/* Search + Filters */}
         <div className="mb-3 sm:mb-4">
           <SearchAndFilters
             filters={filters}
@@ -279,45 +278,80 @@ export default function Index() {
           />
         </div>
 
-        {/* === Bannière JEUX === */}
+        {/* ===== Results (game cards) when searching ===== */}
+        {hasActiveSearch && (
+          <>
+            <h2 className="text-lg font-semibold mb-3">
+              Résultats ({matchingGames.length})
+            </h2>
+
+            {matchingGames.length === 0 ? (
+              <div className="text-muted-foreground mb-8">Aucun jeu trouvé.</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 mb-8">
+                {matchingGames.map((g) => {
+                  const slug = sagaSlugFor(g);
+                  const to = `/s/${slug}?q=${encodeURIComponent(filters.search.trim())}`;
+                  return (
+                    <Link
+                      key={g.id}
+                      to={to}
+                      className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
+                    >
+                      {g.coverUrl ? (
+                        <img
+                          src={g.coverUrl}
+                          alt={g.title}
+                          className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
+                          Pas de jaquette
+                        </div>
+                      )}
+                      <div className="p-3">
+                        <div className="font-semibold leading-tight line-clamp-2">{g.title}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {(normalizeSaga(g.saga) || SANS_SAGA_NAME)}
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* === JEUX banner (no overlay/no caption) === */}
         {jeuxGroup && (
           <Link
             to={`/s/${jeuxGroup.slug}`}
-            className="mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition"
+            className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
           >
-            <picture>
-              <source
-                media="(max-width: 640px)"
-                srcSet="/banner_jeux_1024x360.jpg"
-              />
-              <source
-                media="(max-width: 1024px)"
-                srcSet="/banner_jeux_1600x450.jpg"
-              />
-              <img
-                src="/banner_jeux_1920x500.jpg"
-                alt="Section JEUX"
-                className="w-full object-cover"
-                style={{
-                  maxHeight: 220,
-                }}
-              />
-            </picture>
+            <img
+              src="/banner_jeux_1600x450.jpg"
+              srcSet="/banner_jeux_1024x360.jpg 1024w, /banner_jeux_1600x450.jpg 1600w, /banner_jeux_1920x500.jpg 1920w"
+              sizes="(max-width: 640px) 100vw, (max-width: 1280px) 90vw, 1200px"
+              alt="Section JEUX"
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ objectPosition: "center 50%" }}
+            />
+            <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px]" />
           </Link>
         )}
 
         {/* Sagas */}
         <h2 className="text-lg font-semibold mb-3">Sagas</h2>
         {sagaGroups.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            Aucune saga.
-          </div>
+          <div className="text-center py-12 text-muted-foreground">Aucune saga.</div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
             {sagaGroups.map((g) => (
               <Link
                 key={g.slug}
-                to={`/s/${g.slug}`}
+                to={`/s/${g.slug}${hasActiveSearch ? `?q=${encodeURIComponent(filters.search.trim())}` : ""}`}
                 className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
               >
                 {g.cover ? (
