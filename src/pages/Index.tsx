@@ -1,3 +1,4 @@
+// src/pages/Index.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Gamepad2, Plus, MoreVertical, Upload, Download } from "lucide-react";
@@ -77,7 +78,7 @@ export default function Index() {
 
   const hasActiveSearch = filters.search.trim().length > 0;
 
-  // ---- Grouping into sagas from the already-filtered list ----
+  // ---- Grouping from the already-filtered list ----
   type SagaGroup = {
     name: string;     // display (UPPERCASE)
     slug: string;     // /s/<slug>
@@ -98,6 +99,7 @@ export default function Index() {
     const sagas: SagaGroup[] = [];
 
     for (const [nameUpper, items] of map.entries()) {
+      // cover = 1er jeu trié par order puis createdAt (cohérent avec les pages saga)
       const sorted = [...items].sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -125,6 +127,7 @@ export default function Index() {
     try {
       const payload = {
         ...gameData,
+        // normalize to avoid CRASH / Crash duplicates
         saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
       };
 
@@ -313,7 +316,7 @@ export default function Index() {
                       <div className="p-3">
                         <div className="font-semibold leading-tight line-clamp-2">{g.title}</div>
                         <div className="text-xs text-muted-foreground">
-                          {(normalizeSaga(g.saga) || SANS_SAGA_NAME)}
+                          {normalizeSaga(g.saga) || SANS_SAGA_NAME}
                         </div>
                       </div>
                     </Link>
@@ -338,7 +341,8 @@ export default function Index() {
               className="absolute inset-0 h-full w-full object-cover"
               style={{ objectPosition: "center 50%" }}
             />
-            <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px]" />
+            {/* hauteur visuelle réduite sur desktop */}
+            <div className="relative min-h-[120px] sm:min-h-[150px] lg:min-h-[170px]" />
           </Link>
         )}
 
