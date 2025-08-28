@@ -1,6 +1,8 @@
+// src/pages/SagaPage.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Plus, GripVertical, MoreVertical, Pencil, Trash2, X } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Plus, GripVertical, MoreVertical, Pencil, Trash2 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -18,7 +20,8 @@ import {
 
 import { normalizeSaga } from "@/lib/slug";
 
-// util
+const SANS_SAGA_NAME = "JEUX";
+
 const fromSlug = (slug?: string) =>
   (slug || "").replace(/-/g, " ").replace(/\s+/g, " ").trim();
 
@@ -27,37 +30,40 @@ export default function SagaPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const { search } = useLocation();
-  const searchTerm = useMemo(() => {
-    const q = new URLSearchParams(search).get("q") || "";
-    return q.trim().toLowerCase();
-  }, [search]);
-
-  // human name from URL, then normalized (UPPER)
+  // Nom tel qu’affiché (humain) depuis l’URL
   const sagaHuman = useMemo(() => fromSlug(slug), [slug]);
-  const sagaCanonical = useMemo(() => normalizeSaga(sagaHuman), [sagaHuman]);
+  const isJeux = (slug || "").toLowerCase() === "jeux";
+  // Nom canonique pour comparaison en base
+  const sagaCanonical = useMemo(
+    () => (isJeux ? SANS_SAGA_NAME : normalizeSaga(sagaHuman)),
+    [isJeux, sagaHuman]
+  );
 
   const [games, setGames] = useState<GameDTO[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
   const [reorderMode, setReorderMode] = useState(false);
+
+  // Fiche “jeu”
   const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
 
+  // Chargement de la liste de jeux pour cette page
   async function refresh() {
     try {
       const data = await listGames();
 
-      // filter by saga (normalized)
-      let only = data.filter((g) => normalizeSaga(g.saga) === sagaCanonical);
+      // Filtre:
+      // - si JEUX: on prend jeux SANS saga (null/undefined/"") OU saga normalisée == "JEUX"
+      // - sinon: on prend saga normalisée == sagaCanonical
+      const only = data.filter((g) => {
+        const canon = g.saga ? normalizeSaga(g.saga) : "";
+        if (isJeux) {
+          return !g.saga || canon === SANS_SAGA_NAME;
+        }
+        return canon === sagaCanonical;
+      });
 
-      // if ?q= is present, filter titles again
-      if (searchTerm) {
-        only = only.filter((g) =>
-          g.title?.toLowerCase().includes(searchTerm)
-        );
-      }
-
-      // sort by order then createdAt
+      // Tri par order puis createdAt (stable avec fallback)
       only.sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -78,13 +84,20 @@ export default function SagaPage() {
   }
   useEffect(() => {
     refresh();
-  }, [slug, searchTerm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug]);
 
+  // Enregistrer (ajout / modif)
   const handleSave = async (
     form: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
     try {
-      const payload = { ...form, saga: normalizeSaga(form.saga) };
+      // 👉 Si on est sur JEUX, on force saga = undefined (pas "JEUX")
+      // 👉 Sinon, on normalise la saga
+      const payload: Omit<GameDTO, "id" | "createdAt" | "updatedAt"> = {
+        ...form,
+        saga: isJeux ? undefined : (form.saga ? normalizeSaga(form.saga) : undefined),
+      };
 
       if (editingGame?.id) {
         await updateGame(editingGame.id, payload);
@@ -105,6 +118,7 @@ export default function SagaPage() {
     }
   };
 
+  // Supprimer
   const handleDelete = async (id: number) => {
     const g = games.find((x) => x.id === id);
     if (!confirm(`Supprimer “${g?.title ?? "ce jeu"}” ?`)) return;
@@ -121,7 +135,7 @@ export default function SagaPage() {
     }
   };
 
-  // -------- Reorder --------
+  // -------- Réorganisation (flèches + drag & drop natif) --------
   const bump = async (idx: number, dir: -1 | 1) => {
     const arr = [...games];
     const j = idx + dir;
@@ -160,11 +174,11 @@ export default function SagaPage() {
     const [moved] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, moved);
 
-    await Promise.all(
-      arr.map((g, idx) => updateGame(g.id, { ...g, order: idx }))
-    );
+    // Normalise order = index
+    await Promise.all(arr.map((g, idx) => updateGame(g.id, { ...g, order: idx })));
     refresh();
   };
+  // --------------------------------------------------------------
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -177,7 +191,7 @@ export default function SagaPage() {
             </Button>
             <div>
               <h1 className="text-xl sm:text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-                {sagaCanonical || "Saga"}
+                {isJeux ? SANS_SAGA_NAME : sagaCanonical}
               </h1>
               <p className="text-muted-foreground text-sm">
                 {games.length} jeu{games.length > 1 ? "x" : ""}
@@ -210,31 +224,14 @@ export default function SagaPage() {
           </div>
         </div>
 
-        {/* Active search hint */}
-        {searchTerm && (
-          <div className="mb-4 flex items-center gap-2 text-sm">
-            <span className="px-2 py-1 rounded bg-secondary/40">
-              Filtre : “{searchTerm}”
-            </span>
-            <Link
-              to={`/s/${slug}`}
-              className="inline-flex items-center gap-1 text-primary hover:underline"
-              title="Effacer le filtre"
-            >
-              <X className="w-4 h-4" /> Effacer
-            </Link>
-          </div>
-        )}
-
-        {/* Grid */}
+        {/* Grille */}
         {games.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
-            Aucun jeu dans cette saga.
+            Aucun jeu dans cette {isJeux ? "section" : "saga"}.
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
             {games.map((g, idx) => {
-              const dragging = reorderMode;
               const dragClasses =
                 reorderMode && dragOverIndex === idx ? "ring-2 ring-primary" : "";
 
@@ -242,12 +239,12 @@ export default function SagaPage() {
                 <div
                   key={g.id}
                   className={`group relative rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition ${dragClasses}`}
-                  draggable={dragging}
+                  draggable={reorderMode}
                   onDragStart={() => onDragStart(idx)}
                   onDragOver={(e) => onDragOver(idx, e)}
                   onDrop={() => onDrop(idx)}
                 >
-                  {/* Menu */}
+                  {/* Menu “⋯” */}
                   <div
                     className="absolute top-2 right-2 z-10"
                     onClick={(e) => e.stopPropagation()}
@@ -279,7 +276,7 @@ export default function SagaPage() {
                     </DropdownMenu>
                   </div>
 
-                  {/* Cover */}
+                  {/* Cover -> ouvre la fiche jeu */}
                   <button
                     type="button"
                     className="w-full text-left"
@@ -299,7 +296,7 @@ export default function SagaPage() {
                     )}
                   </button>
 
-                  {/* Infos */}
+                  {/* Infos compactes */}
                   <div className="p-3 space-y-2">
                     <div className="font-semibold leading-tight line-clamp-2">
                       {g.title}
@@ -353,7 +350,7 @@ export default function SagaPage() {
           </div>
         )}
 
-        {/* Dialog Add / Edit */}
+        {/* Dialog : Ajouter / Modifier */}
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <GameForm
@@ -364,7 +361,8 @@ export default function SagaPage() {
                   rating: 3,
                   genres: [],
                   platform: "",
-                  saga: sagaCanonical,
+                  // Si JEUX: on préremplit sans saga, sinon avec le nom de saga affiché
+                  saga: isJeux ? undefined : sagaCanonical,
                   order:
                     games.length > 0
                       ? (games[games.length - 1].order ?? games.length - 1) + 1
@@ -376,10 +374,97 @@ export default function SagaPage() {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
+              // Pas d’autocomplétion nécessaire dans une page de saga précise
               availableSagas={[]}
             />
           </DialogContent>
         </Dialog>
+
+        {/* Dialog : Fiche “jeu” */}
+        <Dialog open={!!viewingGame} onOpenChange={(o) => !o && setViewingGame(null)}>
+          <DialogContent className="max-w-xl p-0 overflow-hidden">
+            {viewingGame && (
+              <div className="grid grid-cols-1 sm:grid-cols-2">
+                {/* Visuel */}
+                <div className="bg-black/20 p-4 flex items-center justify-center">
+                  {viewingGame.coverUrl ? (
+                    <img
+                      src={viewingGame.coverUrl}
+                      alt={viewingGame.title}
+                      className="rounded-lg w-full h-auto sm:max-h-none max-h-[40vh] object-contain"
+                    />
+                  ) : (
+                    <div className="w-full aspect-[3/4] rounded-lg bg-muted flex items-center justify-center">
+                      Pas de jaquette
+                    </div>
+                  )}
+                </div>
+
+                {/* Détails */}
+                <div className="p-4 space-y-3">
+                  <h3 className="text-xl font-bold">{viewingGame.title}</h3>
+
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    {viewingGame.platform && <div>Plateforme : {viewingGame.platform}</div>}
+                    {typeof viewingGame.rating === "number" && <div>Note : {viewingGame.rating}/5</div>}
+                    {viewingGame.saga && <div>Saga : {normalizeSaga(viewingGame.saga)}</div>}
+                  </div>
+
+                  {!!viewingGame.genres?.length && (
+                    <div className="flex flex-wrap gap-2">
+                      {viewingGame.genres.map((t) => (
+                        <span key={t} className="text-xs px-2 py-1 rounded bg-secondary/40">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {viewingGame.whyLiked && (
+                    <p className="text-sm leading-relaxed">{viewingGame.whyLiked}</p>
+                  )}
+
+                  <div className="pt-2 flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setEditingGame(viewingGame);
+                        setViewingGame(null);
+                        setIsFormOpen(true);
+                      }}
+                    >
+                      <Pencil className="w-4 h-4 mr-2" />
+                      Modifier
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        const id = viewingGame.id;
+                        setViewingGame(null);
+                        handleDelete(id);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Supprimer
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* FAB mobile */}
+        <Button
+          className="fixed sm:hidden bottom-4 right-4 rounded-full h-12 w-12 shadow-glow-primary"
+          onClick={() => {
+            setEditingGame(null);
+            setIsFormOpen(true);
+          }}
+          title="Ajouter"
+        >
+          <Plus className="w-5 h-5" />
+        </Button>
       </div>
     </div>
   );
