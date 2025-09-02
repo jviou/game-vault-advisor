@@ -18,6 +18,7 @@ const App = () => (
       <BrowserRouter basename="/">
         <Routes>
           <Route path="/" element={<Index />} />
+          {/* Page d’une saga OU de la section JEUX (slug = "jeux") */}
           <Route path="/s/:slug" element={<SagaPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
