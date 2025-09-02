@@ -69,7 +69,11 @@ export default function Index() {
     const term = filters.search.trim().toLowerCase();
     return games.filter((game) => {
       if (term && !game.title?.toLowerCase().includes(term)) return false;
-      if (filters.genres.length > 0 && !filters.genres.some((g) => (game.genres || []).includes(g))) return false;
+      if (
+        filters.genres.length > 0 &&
+        !filters.genres.some((g) => (game.genres || []).includes(g))
+      )
+        return false;
       if ((game.rating ?? 0) < filters.minRating) return false;
       if (filters.platform && game.platform !== filters.platform) return false;
       return true;
@@ -80,8 +84,8 @@ export default function Index() {
 
   // ---- Grouping from the already-filtered list ----
   type SagaGroup = {
-    name: string;     // display (UPPERCASE)
-    slug: string;     // /s/<slug>
+    name: string; // display (UPPERCASE)
+    slug: string; // /s/<slug>
     items: GameDTO[];
     cover?: string;
     count: number;
@@ -109,7 +113,8 @@ export default function Index() {
         return ac - bc;
       });
       const cover = sorted[0]?.coverUrl;
-      const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
+      const slug =
+        nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
 
       const group = { name: nameUpper, slug, items, cover, count: items.length };
       if (nameUpper === SANS_SAGA_NAME) jeuxGroup = group;
@@ -127,7 +132,7 @@ export default function Index() {
     try {
       const payload = {
         ...gameData,
-        // normalize to avoid CRASH / Crash duplicates
+        // normalize to avoid CRASH / Crash / Crash-Bandicoot duplicates
         saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
       };
 
@@ -164,7 +169,10 @@ export default function Index() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast({ title: "Export JSON", description: "La collection a été exportée." });
+      toast({
+        title: "Export JSON",
+        description: "La collection a été exportée.",
+      });
     } catch (e: any) {
       toast({
         title: "Export échoué",
@@ -294,7 +302,9 @@ export default function Index() {
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 mb-8">
                 {matchingGames.map((g) => {
                   const slug = sagaSlugFor(g);
-                  const to = `/s/${slug}?q=${encodeURIComponent(filters.search.trim())}`;
+                  const to = `/s/${slug}?q=${encodeURIComponent(
+                    filters.search.trim()
+                  )}`;
                   return (
                     <Link
                       key={g.id}
@@ -314,7 +324,9 @@ export default function Index() {
                         </div>
                       )}
                       <div className="p-3">
-                        <div className="font-semibold leading-tight line-clamp-2">{g.title}</div>
+                        <div className="font-semibold leading-tight line-clamp-2">
+                          {g.title}
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           {normalizeSaga(g.saga) || SANS_SAGA_NAME}
                         </div>
@@ -349,13 +361,19 @@ export default function Index() {
         {/* Sagas */}
         <h2 className="text-lg font-semibold mb-3">Sagas</h2>
         {sagaGroups.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">Aucune saga.</div>
+          <div className="text-center py-12 text-muted-foreground">
+            Aucune saga.
+          </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
             {sagaGroups.map((g) => (
               <Link
                 key={g.slug}
-                to={`/s/${g.slug}${hasActiveSearch ? `?q=${encodeURIComponent(filters.search.trim())}` : ""}`}
+                to={`/s/${g.slug}${
+                  hasActiveSearch
+                    ? `?q=${encodeURIComponent(filters.search.trim())}`
+                    : ""
+                }`}
                 className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
               >
                 {g.cover ? (
@@ -394,9 +412,7 @@ export default function Index() {
               }}
               availableSagas={Array.from(
                 new Set(
-                  games
-                    .map((g) => normalizeSaga(g.saga))
-                    .filter(Boolean) as string[]
+                  games.map((g) => normalizeSaga(g.saga)).filter(Boolean) as string[]
                 )
               ).sort()}
             />
