@@ -22,6 +22,7 @@ import { normalizeSaga } from "@/lib/slug";
 
 const SANS_SAGA_NAME = "JEUX";
 
+// util: slug -> libellé humain
 const fromSlug = (slug?: string) =>
   (slug || "").replace(/-/g, " ").replace(/\s+/g, " ").trim();
 
@@ -30,10 +31,11 @@ export default function SagaPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Nom tel qu’affiché (humain) depuis l’URL
+  // Nom “humain” depuis l’URL, puis indicateur JEUX
   const sagaHuman = useMemo(() => fromSlug(slug), [slug]);
   const isJeux = (slug || "").toLowerCase() === "jeux";
-  // Nom canonique pour comparaison en base
+
+  // Nom canonique (pour comparaison DB)
   const sagaCanonical = useMemo(
     () => (isJeux ? SANS_SAGA_NAME : normalizeSaga(sagaHuman)),
     [isJeux, sagaHuman]
@@ -44,26 +46,24 @@ export default function SagaPage() {
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
   const [reorderMode, setReorderMode] = useState(false);
 
-  // Fiche “jeu”
+  // fiche “jeu”
   const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
 
-  // Chargement de la liste de jeux pour cette page
+  // Chargement des jeux pour cette page
   async function refresh() {
     try {
       const data = await listGames();
 
-      // Filtre:
-      // - si JEUX: on prend jeux SANS saga (null/undefined/"") OU saga normalisée == "JEUX"
-      // - sinon: on prend saga normalisée == sagaCanonical
+      // Filtrage:
+      // - JEUX  -> jeux sans saga (null/undef/"") OU saga normalisée == "JEUX"
+      // - sinon -> jeux dont la saga normalisée === sagaCanonical
       const only = data.filter((g) => {
         const canon = g.saga ? normalizeSaga(g.saga) : "";
-        if (isJeux) {
-          return !g.saga || canon === SANS_SAGA_NAME;
-        }
+        if (isJeux) return !g.saga || canon === SANS_SAGA_NAME;
         return canon === sagaCanonical;
       });
 
-      // Tri par order puis createdAt (stable avec fallback)
+      // Tri par order puis par createdAt
       only.sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -92,8 +92,9 @@ export default function SagaPage() {
     form: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
     try {
-      // 👉 Si on est sur JEUX, on force saga = undefined (pas "JEUX")
-      // 👉 Sinon, on normalise la saga
+      // IMPORTANT :
+      // - Sur la page JEUX, on force saga = undefined (on NE stocke PAS "JEUX")
+      // - Sinon, on normalise la valeur saisie
       const payload: Omit<GameDTO, "id" | "createdAt" | "updatedAt"> = {
         ...form,
         saga: isJeux ? undefined : (form.saga ? normalizeSaga(form.saga) : undefined),
@@ -135,7 +136,7 @@ export default function SagaPage() {
     }
   };
 
-  // -------- Réorganisation (flèches + drag & drop natif) --------
+  // -------- Réorganisation (flèches + drag & drop) --------
   const bump = async (idx: number, dir: -1 | 1) => {
     const arr = [...games];
     const j = idx + dir;
@@ -178,7 +179,7 @@ export default function SagaPage() {
     await Promise.all(arr.map((g, idx) => updateGame(g.id, { ...g, order: idx })));
     refresh();
   };
-  // --------------------------------------------------------------
+  // -------------------------------------------------------
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -361,7 +362,7 @@ export default function SagaPage() {
                   rating: 3,
                   genres: [],
                   platform: "",
-                  // Si JEUX: on préremplit sans saga, sinon avec le nom de saga affiché
+                  // Sur JEUX on ne préremplit pas de saga
                   saga: isJeux ? undefined : sagaCanonical,
                   order:
                     games.length > 0
@@ -374,7 +375,6 @@ export default function SagaPage() {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              // Pas d’autocomplétion nécessaire dans une page de saga précise
               availableSagas={[]}
             />
           </DialogContent>
