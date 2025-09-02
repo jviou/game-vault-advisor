@@ -1,8 +1,7 @@
 // src/pages/SagaPage.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Plus, GripVertical, MoreVertical, Pencil, Trash2 } from "lucide-react";
-
+import { ArrowLeft, Plus, GripVertical, MoreVertical, Pencil, Trash2, CheckCircle2, Inbox } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -18,64 +17,41 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 
-import { normalizeSaga } from "@/lib/slug";
+import { normalizeSaga, slugify } from "@/lib/slug";
 
-const SANS_SAGA_NAME = "JEUX";
-const TODO_NAME = "A FAIRE";
-
-// util: slug -> libellé humain
+// --- utils ---
 const fromSlug = (slug?: string) =>
   (slug || "").replace(/-/g, " ").replace(/\s+/g, " ").trim();
+
+const TODO_SLUG = "a-faire";
+const SANS_SAGA_NAME = "JEUX";
 
 export default function SagaPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // États “spéciaux”
-  const lower = (slug || "").toLowerCase();
-  const isJeux = lower === "jeux";
-  const isTodo = lower === "todo";
-
-  // Nom affiché + nom canonique pour match DB
-  const sagaHuman = useMemo(() => fromSlug(slug), [slug]);
-  const displayName = isJeux ? SANS_SAGA_NAME : isTodo ? TODO_NAME : normalizeSaga(sagaHuman);
-  const sagaCanonical = useMemo(
-    () => (isJeux ? SANS_SAGA_NAME : isTodo ? TODO_NAME : normalizeSaga(sagaHuman)),
-    [isJeux, isTodo, sagaHuman]
-  );
+  // -------- Contexte : saga ou backlog ? --------
+  const isBacklog = (slug || "").toLowerCase() === TODO_SLUG;
+  const sagaHuman = useMemo(() => (isBacklog ? "À FAIRE" : fromSlug(slug)), [slug, isBacklog]);
+  const sagaCanonical = useMemo(() => (isBacklog ? "À FAIRE" : normalizeSaga(sagaHuman)), [sagaHuman, isBacklog]);
 
   const [games, setGames] = useState<GameDTO[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
   const [reorderMode, setReorderMode] = useState(false);
 
-  // fiche “jeu” (lecture)
   const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
 
-  // Chargement
   async function refresh() {
     try {
       const data = await listGames();
 
-      // Filtrage:
-      // - JEUX  -> jeux sans saga OU saga normalisée == "JEUX", ET status !== "todo"
-      // - TODO  -> jeux avec status === "todo" (peu importe la saga)
-      // - Saga  -> jeux dont la saga normalisée === sagaCanonical ET status !== "todo"
-      const only = data.filter((g) => {
-        const canon = g.saga ? normalizeSaga(g.saga) : "";
-        const status = (g as any).status as string | undefined;
+      const only = isBacklog
+        ? data.filter((g: any) => g.backlog === true)
+        : data.filter((g) => normalizeSaga(g.saga) === sagaCanonical);
 
-        if (isTodo) return status === "todo";
-
-        if (isJeux) {
-          return ( !g.saga || canon === SANS_SAGA_NAME ) && status !== "todo";
-        }
-
-        return canon === sagaCanonical && status !== "todo";
-      });
-
-      // Tri par order puis par createdAt
+      // tri par order puis createdAt
       only.sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -89,43 +65,35 @@ export default function SagaPage() {
     } catch (e: any) {
       toast({
         title: "Erreur",
-        description: e?.message || "Impossible de charger la page.",
+        description: e?.message || "Impossible de charger la liste.",
         variant: "destructive",
       });
     }
   }
   useEffect(() => {
     refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
-  // Enregistrer (ajout / modif)
+  // -------- Enregistrer (ajout/modif) --------
   const handleSave = async (
     form: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
     try {
-      // Règles de normalisation:
-      // - Page JEUX  : saga = undefined (on ne stocke pas "JEUX"), status forcé ≠ "todo"
-      // - Page TODO  : status = "todo" (saga inchangée/optionnelle)
-      // - Page Saga  : saga = nom normalisé de la saga, status ≠ "todo"
-      const base: any = { ...form };
+      let payload = { ...form };
 
-      if (isJeux) {
-        base.saga = undefined;
-        if (base.status === "todo") base.status = undefined;
-      } else if (isTodo) {
-        base.status = "todo";
-        // garder base.saga tel que saisi (optionnel)
+      if (isBacklog) {
+        // Dans À FAIRE: on force backlog et retire la saga
+        payload = { ...payload, backlog: true as any, saga: undefined };
       } else {
-        base.saga = normalizeSaga(form.saga || sagaCanonical);
-        if (base.status === "todo") base.status = undefined;
+        // Dans une saga: on force la saga normalisée et backlog false
+        payload = { ...payload, saga: normalizeSaga(sagaHuman), backlog: false as any };
       }
 
       if (editingGame?.id) {
-        await updateGame(editingGame.id, base);
+        await updateGame(editingGame.id, payload);
         toast({ title: "Jeu mis à jour" });
       } else {
-        await createGame(base);
+        await createGame(payload);
         toast({ title: "Jeu ajouté" });
       }
       setIsFormOpen(false);
@@ -140,7 +108,7 @@ export default function SagaPage() {
     }
   };
 
-  // Supprimer
+  // -------- Suppression --------
   const handleDelete = async (id: number) => {
     const g = games.find((x) => x.id === id);
     if (!confirm(`Supprimer “${g?.title ?? "ce jeu"}” ?`)) return;
@@ -157,7 +125,37 @@ export default function SagaPage() {
     }
   };
 
-  // -------- Réorganisation (flèches + drag & drop) --------
+  // -------- Déplacements backlog/collection --------
+  const moveToBacklog = async (g: GameDTO) => {
+    try {
+      await updateGame(g.id, { ...g, backlog: true as any, saga: undefined, order: g.order ?? 0 });
+      toast({ title: "Envoyé dans À FAIRE" });
+      refresh();
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e?.message || "Impossible de déplacer le jeu.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const markAsDone = async (g: GameDTO) => {
+    try {
+      // Sort du backlog → retourne dans collection, sans saga (donc JEUX)
+      await updateGame(g.id, { ...g, backlog: false as any, saga: undefined });
+      toast({ title: "Marqué comme fait" });
+      refresh();
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e?.message || "Impossible de marquer comme fait.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // -------- Réorganisation (drag & drop natif) --------
   const bump = async (idx: number, dir: -1 | 1) => {
     const arr = [...games];
     const j = idx + dir;
@@ -199,7 +197,6 @@ export default function SagaPage() {
     await Promise.all(arr.map((g, idx) => updateGame(g.id, { ...g, order: idx })));
     refresh();
   };
-  // -------------------------------------------------------
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -212,7 +209,7 @@ export default function SagaPage() {
             </Button>
             <div>
               <h1 className="text-xl sm:text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-                {displayName}
+                {sagaCanonical}
               </h1>
               <p className="text-muted-foreground text-sm">
                 {games.length} jeu{games.length > 1 ? "x" : ""}
@@ -248,11 +245,12 @@ export default function SagaPage() {
         {/* Grille */}
         {games.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
-            Aucun jeu dans cette {isJeux ? "section" : isTodo ? "liste" : "saga"}.
+            {isBacklog ? "Aucun jeu dans À FAIRE." : "Aucun jeu dans cette saga."}
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
             {games.map((g, idx) => {
+              const dragging = reorderMode;
               const dragClasses =
                 reorderMode && dragOverIndex === idx ? "ring-2 ring-primary" : "";
 
@@ -260,7 +258,7 @@ export default function SagaPage() {
                 <div
                   key={g.id}
                   className={`group relative rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition ${dragClasses}`}
-                  draggable={reorderMode}
+                  draggable={dragging}
                   onDragStart={() => onDragStart(idx)}
                   onDragOver={(e) => onDragOver(idx, e)}
                   onDrop={() => onDrop(idx)}
@@ -276,7 +274,18 @@ export default function SagaPage() {
                           <MoreVertical className="w-4 h-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuContent align="end" className="w-56">
+                        {!isBacklog ? (
+                          <DropdownMenuItem onClick={() => moveToBacklog(g)}>
+                            <Inbox className="w-4 h-4 mr-2" />
+                            Envoyer dans “À FAIRE”
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => markAsDone(g)}>
+                            <CheckCircle2 className="w-4 h-4 mr-2" />
+                            Marquer comme fait
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           onClick={() => {
                             setEditingGame(g);
@@ -297,7 +306,7 @@ export default function SagaPage() {
                     </DropdownMenu>
                   </div>
 
-                  {/* Cover -> ouvre la fiche jeu */}
+                  {/* Cover + ouverture fiche */}
                   <button
                     type="button"
                     className="w-full text-left"
@@ -331,7 +340,10 @@ export default function SagaPage() {
                       )}
                       {!!g.genres?.length &&
                         g.genres.slice(0, 2).map((tag) => (
-                          <span key={tag} className="rounded px-2 py-0.5 bg-secondary/40">
+                          <span
+                            key={tag}
+                            className="rounded px-2 py-0.5 bg-secondary/40"
+                          >
                             {tag}
                           </span>
                         ))}
@@ -382,8 +394,8 @@ export default function SagaPage() {
                   rating: 3,
                   genres: [],
                   platform: "",
-                  saga: isJeux ? undefined : (isTodo ? "" : sagaCanonical),
-                  // on ne préremplit pas status “todo” ici, on le force au save si isTodo
+                  saga: isBacklog ? "" : sagaCanonical,
+                  backlog: isBacklog ? (true as any) : (false as any),
                   order:
                     games.length > 0
                       ? (games[games.length - 1].order ?? games.length - 1) + 1
@@ -395,12 +407,23 @@ export default function SagaPage() {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              availableSagas={[]}
+              // On ne propose la liste des sagas que pour les pages "Saga" classiques.
+              availableSagas={
+                isBacklog
+                  ? []
+                  : Array.from(
+                      new Set(
+                        games
+                          .map((g) => normalizeSaga(g.saga))
+                          .filter(Boolean) as string[]
+                      )
+                    ).sort()
+              }
             />
           </DialogContent>
         </Dialog>
 
-        {/* Dialog : Fiche “jeu” */}
+        {/* Dialog : Fiche “jeu” (lecture) */}
         <Dialog open={!!viewingGame} onOpenChange={(o) => !o && setViewingGame(null)}>
           <DialogContent className="max-w-xl p-0 overflow-hidden">
             {viewingGame && (
@@ -426,16 +449,20 @@ export default function SagaPage() {
 
                   <div className="text-sm text-muted-foreground space-y-1">
                     {viewingGame.platform && <div>Plateforme : {viewingGame.platform}</div>}
-                    {typeof viewingGame.rating === "number" && <div>Note : {viewingGame.rating}/5</div>}
-                    {viewingGame.saga && <div>Saga : {normalizeSaga(viewingGame.saga)}</div>}
-                    {(viewingGame as any).status === "todo" && <div>A faire</div>}
+                    {typeof viewingGame.rating === "number" && (
+                      <div>Note : {viewingGame.rating}/5</div>
+                    )}
+                    {!isBacklog && viewingGame.saga && (
+                      <div>Saga : {normalizeSaga(viewingGame.saga)}</div>
+                    )}
+                    {isBacklog && <div className="font-medium">Statut : À FAIRE</div>}
                   </div>
 
                   {!!viewingGame.genres?.length && (
                     <div className="flex flex-wrap gap-2">
-                      {viewingGame.genres.map((t) => (
-                        <span key={t} className="text-xs px-2 py-1 rounded bg-secondary/40">
-                          {t}
+                      {viewingGame.genres.map((g) => (
+                        <span key={g} className="text-xs px-2 py-1 rounded bg-secondary/40">
+                          {g}
                         </span>
                       ))}
                     </div>
@@ -445,7 +472,19 @@ export default function SagaPage() {
                     <p className="text-sm leading-relaxed">{viewingGame.whyLiked}</p>
                   )}
 
-                  <div className="pt-2 flex gap-2">
+                  <div className="pt-2 flex flex-wrap gap-2">
+                    {!isBacklog ? (
+                      <Button variant="secondary" onClick={() => { setViewingGame(null); moveToBacklog(viewingGame); }}>
+                        <Inbox className="w-4 h-4 mr-2" />
+                        Envoyer dans “À FAIRE”
+                      </Button>
+                    ) : (
+                      <Button variant="secondary" onClick={() => { setViewingGame(null); markAsDone(viewingGame); }}>
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        Marquer comme fait
+                      </Button>
+                    )}
+
                     <Button
                       variant="outline"
                       onClick={() => {
