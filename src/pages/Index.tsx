@@ -1,7 +1,6 @@
-// src/pages/Index.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Gamepad2, Plus, MoreVertical, Upload, Download } from "lucide-react";
+import { Gamepad2, Plus, MoreVertical, Upload, Download, ListTodo } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -23,6 +22,7 @@ import { slugify, normalizeSaga } from "@/lib/slug";
 
 const SANS_SAGA_NAME = "JEUX";
 const SANS_SAGA_SLUG = "jeux";
+const TODO_NAME = "À FAIRE";
 const TODO_SLUG = "a-faire";
 
 export default function Index() {
@@ -41,6 +41,7 @@ export default function Index() {
     sortOrder: "desc",
   });
 
+  // ---- Load ----
   async function refresh() {
     try {
       const data = await listGames();
@@ -57,30 +58,35 @@ export default function Index() {
     refresh();
   }, []);
 
-  // ---- Séparation collection / backlog ----
-  const backlogGames = useMemo(() => games.filter((g: any) => g.backlog === true), [games]);
-  const collectionGames = useMemo(() => games.filter((g: any) => g.backlog !== true), [games]);
-
+  // ---- Platforms for filters ----
   const availablePlatforms = useMemo(() => {
-    return Array.from(new Set(collectionGames.map((g) => g.platform).filter(Boolean) as string[])).sort();
-  }, [collectionGames]);
+    return Array.from(
+      new Set(games.filter(g => !g.todo).map((g) => g.platform).filter(Boolean) as string[])
+    ).sort();
+  }, [games]);
 
+  // ---- Visible (non TODO) & TODO list ----
+  const notTodo = useMemo(() => games.filter(g => !g.todo), [games]);
+  const todoList = useMemo(() => games.filter(g => !!g.todo), [games]);
+
+  // ---- Filtering (game-level) ----
   const matchingGames: GameDTO[] = useMemo(() => {
     const term = filters.search.trim().toLowerCase();
-    return collectionGames.filter((game) => {
+    return notTodo.filter((game) => {
       if (term && !game.title?.toLowerCase().includes(term)) return false;
       if (filters.genres.length > 0 && !filters.genres.some((g) => (game.genres || []).includes(g))) return false;
       if ((game.rating ?? 0) < filters.minRating) return false;
       if (filters.platform && game.platform !== filters.platform) return false;
       return true;
     });
-  }, [collectionGames, filters]);
+  }, [notTodo, filters]);
 
   const hasActiveSearch = filters.search.trim().length > 0;
 
+  // ---- Grouping into sagas from the already-filtered list ----
   type SagaGroup = {
-    name: string;
-    slug: string;
+    name: string;     // display (UPPERCASE)
+    slug: string;     // /s/<slug>
     items: GameDTO[];
     cover?: string;
     count: number;
@@ -98,6 +104,7 @@ export default function Index() {
     const sagas: SagaGroup[] = [];
 
     for (const [nameUpper, items] of map.entries()) {
+      // tri stable
       const sorted = [...items].sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -118,9 +125,16 @@ export default function Index() {
     return { jeuxGroup, sagaGroups: sagas };
   }, [matchingGames]);
 
-  const handleSaveGame = async (gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">) => {
+  // ---- Create / update ----
+  const handleSaveGame = async (
+    gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
+  ) => {
     try {
-      const payload = { ...gameData, saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined };
+      const payload = {
+        ...gameData,
+        saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
+      };
+
       if (editingGame?.id != null) {
         await updateGame(editingGame.id, payload);
         toast({ title: "Jeu mis à jour" });
@@ -140,6 +154,7 @@ export default function Index() {
     }
   };
 
+  // ---- Export ----
   const handleExportAll = () => {
     try {
       const data = JSON.stringify(games, null, 2);
@@ -163,6 +178,7 @@ export default function Index() {
     }
   };
 
+  // ---- Import ----
   const handleImport = (file: File) => {
     const reader = new FileReader();
     reader.onload = async () => {
@@ -170,7 +186,10 @@ export default function Index() {
         const payload = JSON.parse(String(reader.result)) as GameDTO[];
         for (const g of payload) {
           const { id, createdAt, updatedAt, ...rest } = g as any;
-          await createGame({ ...rest, saga: rest.saga ? normalizeSaga(rest.saga) : undefined });
+          await createGame({
+            ...rest,
+            saga: rest.saga ? normalizeSaga(rest.saga) : undefined,
+          });
         }
         toast({ title: "Import JSON", description: "Import terminé." });
         refresh();
@@ -184,6 +203,8 @@ export default function Index() {
     };
     reader.readAsText(file);
   };
+
+  const collectionCount = notTodo.length;
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -199,11 +220,12 @@ export default function Index() {
                 Ma Collection
               </h1>
               <p className="text-sm sm:text-base text-muted-foreground">
-                {collectionGames.length} {collectionGames.length > 1 ? "jeux" : "jeu"}
+                {collectionCount} {collectionCount > 1 ? "jeux" : "jeu"}
               </p>
             </div>
           </div>
 
+          {/* Actions */}
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -250,42 +272,88 @@ export default function Index() {
           </div>
         </div>
 
-        {/* Filtres */}
+        {/* Search + Filters */}
         <div className="mb-3 sm:mb-4">
-          <SearchAndFilters filters={filters} onFiltersChange={setFilters} availablePlatforms={availablePlatforms} />
+          <SearchAndFilters
+            filters={filters}
+            onFiltersChange={setFilters}
+            availablePlatforms={availablePlatforms}
+          />
         </div>
 
-        {/* Bannière À FAIRE */}
-        {backlogGames.length > 0 && (
-          <Link
-            to="/a-faire"
-            className="relative mb-6 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
-          >
-            <img
-              src="/banner_afaire_1600x450.jpg"
-              srcSet="/banner_afaire_1024x360.jpg 1024w, /banner_afaire_1600x450.jpg 1600w, /banner_afaire_1920x500.jpg 1920w"
-              alt="Section À FAIRE"
-              className="absolute inset-0 h-full w-full object-cover"
-              style={{ objectPosition: "center 50%" }}
-            />
-            <div className="relative flex min-h-[120px] sm:min-h-[140px] lg:min-h-[160px]" />
-          </Link>
+        {/* ===== RESULTS when searching ===== */}
+        {hasActiveSearch && (
+          <>
+            <h2 className="text-lg font-semibold mb-3">
+              Résultats ({matchingGames.length})
+            </h2>
+
+            {matchingGames.length === 0 ? (
+              <div className="text-muted-foreground mb-8">Aucun jeu trouvé.</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 mb-8">
+                {matchingGames.map((g) => (
+                  <Link
+                    key={g.id}
+                    to={`/s/${(normalizeSaga(g.saga) || SANS_SAGA_SLUG) === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(normalizeSaga(g.saga) || SANS_SAGA_NAME)}`}
+                    className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
+                  >
+                    {g.coverUrl ? (
+                      <img
+                        src={g.coverUrl}
+                        alt={g.title}
+                        className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
+                        Pas de jaquette
+                      </div>
+                    )}
+                    <div className="p-3">
+                      <div className="font-semibold leading-tight line-clamp-2">{g.title}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {(normalizeSaga(g.saga) || SANS_SAGA_NAME)}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
-        {/* Bannière JEUX */}
+        {/* === JEUX banner === */}
         {jeuxGroup && (
           <Link
             to={`/s/${jeuxGroup.slug}`}
             className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+            aria-label="Section JEUX"
           >
             <img
               src="/banner_jeux_1600x450.jpg"
               srcSet="/banner_jeux_1024x360.jpg 1024w, /banner_jeux_1600x450.jpg 1600w, /banner_jeux_1920x500.jpg 1920w"
+              sizes="(max-width: 640px) 100vw, (max-width: 1280px) 90vw, 1200px"
               alt="Section JEUX"
               className="absolute inset-0 h-full w-full object-cover"
               style={{ objectPosition: "center 50%" }}
             />
             <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px]" />
+          </Link>
+        )}
+
+        {/* === À FAIRE banner (visible si au moins 1) === */}
+        {todoList.length > 0 && (
+          <Link
+            to={`/s/${TODO_SLUG}`}
+            className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+            aria-label="Section À FAIRE"
+          >
+            <div className="absolute inset-0 flex items-center justify-center">
+              <ListTodo className="w-10 h-10 opacity-80 mr-3" />
+              <span className="text-xl sm:text-2xl font-extrabold tracking-wide">À FAIRE ({todoList.length})</span>
+            </div>
+            <div className="relative flex min-h-[110px]" />
           </Link>
         )}
 
@@ -302,14 +370,20 @@ export default function Index() {
                 className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
               >
                 {g.cover ? (
-                  <img src={g.cover} alt={g.name} className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform" />
+                  <img
+                    src={g.cover}
+                    alt={g.name}
+                    className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform"
+                  />
                 ) : (
                   <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
                     Pas de jaquette
                   </div>
                 )}
                 <div className="p-3">
-                  <div className="font-semibold leading-tight line-clamp-2 uppercase">{g.name}</div>
+                  <div className="font-semibold leading-tight line-clamp-2 uppercase">
+                    {g.name}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     {g.count} jeu{g.count > 1 ? "x" : ""}
                   </div>
@@ -329,7 +403,14 @@ export default function Index() {
                 setIsFormOpen(false);
                 setEditingGame(null);
               }}
-              availableSagas={Array.from(new Set(collectionGames.map((g) => normalizeSaga(g.saga)).filter(Boolean) as string[])).sort()}
+              availableSagas={Array.from(
+                new Set(
+                  games
+                    .filter(g => !g.todo) // on ne propose que les sagas de la collection
+                    .map((g) => normalizeSaga(g.saga))
+                    .filter(Boolean) as string[]
+                )
+              ).sort()}
             />
           </DialogContent>
         </Dialog>
