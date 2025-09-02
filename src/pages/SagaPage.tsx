@@ -21,6 +21,7 @@ import {
 import { normalizeSaga } from "@/lib/slug";
 
 const SANS_SAGA_NAME = "JEUX";
+const TODO_NAME = "A FAIRE";
 
 // util: slug -> libellé humain
 const fromSlug = (slug?: string) =>
@@ -31,14 +32,17 @@ export default function SagaPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Nom “humain” depuis l’URL, puis indicateur JEUX
-  const sagaHuman = useMemo(() => fromSlug(slug), [slug]);
-  const isJeux = (slug || "").toLowerCase() === "jeux";
+  // États “spéciaux”
+  const lower = (slug || "").toLowerCase();
+  const isJeux = lower === "jeux";
+  const isTodo = lower === "todo";
 
-  // Nom canonique (pour comparaison DB)
+  // Nom affiché + nom canonique pour match DB
+  const sagaHuman = useMemo(() => fromSlug(slug), [slug]);
+  const displayName = isJeux ? SANS_SAGA_NAME : isTodo ? TODO_NAME : normalizeSaga(sagaHuman);
   const sagaCanonical = useMemo(
-    () => (isJeux ? SANS_SAGA_NAME : normalizeSaga(sagaHuman)),
-    [isJeux, sagaHuman]
+    () => (isJeux ? SANS_SAGA_NAME : isTodo ? TODO_NAME : normalizeSaga(sagaHuman)),
+    [isJeux, isTodo, sagaHuman]
   );
 
   const [games, setGames] = useState<GameDTO[]>([]);
@@ -46,21 +50,29 @@ export default function SagaPage() {
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
   const [reorderMode, setReorderMode] = useState(false);
 
-  // fiche “jeu”
+  // fiche “jeu” (lecture)
   const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
 
-  // Chargement des jeux pour cette page
+  // Chargement
   async function refresh() {
     try {
       const data = await listGames();
 
       // Filtrage:
-      // - JEUX  -> jeux sans saga (null/undef/"") OU saga normalisée == "JEUX"
-      // - sinon -> jeux dont la saga normalisée === sagaCanonical
+      // - JEUX  -> jeux sans saga OU saga normalisée == "JEUX", ET status !== "todo"
+      // - TODO  -> jeux avec status === "todo" (peu importe la saga)
+      // - Saga  -> jeux dont la saga normalisée === sagaCanonical ET status !== "todo"
       const only = data.filter((g) => {
         const canon = g.saga ? normalizeSaga(g.saga) : "";
-        if (isJeux) return !g.saga || canon === SANS_SAGA_NAME;
-        return canon === sagaCanonical;
+        const status = (g as any).status as string | undefined;
+
+        if (isTodo) return status === "todo";
+
+        if (isJeux) {
+          return ( !g.saga || canon === SANS_SAGA_NAME ) && status !== "todo";
+        }
+
+        return canon === sagaCanonical && status !== "todo";
       });
 
       // Tri par order puis par createdAt
@@ -77,7 +89,7 @@ export default function SagaPage() {
     } catch (e: any) {
       toast({
         title: "Erreur",
-        description: e?.message || "Impossible de charger la saga.",
+        description: e?.message || "Impossible de charger la page.",
         variant: "destructive",
       });
     }
@@ -92,19 +104,28 @@ export default function SagaPage() {
     form: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
     try {
-      // IMPORTANT :
-      // - Sur la page JEUX, on force saga = undefined (on NE stocke PAS "JEUX")
-      // - Sinon, on normalise la valeur saisie
-      const payload: Omit<GameDTO, "id" | "createdAt" | "updatedAt"> = {
-        ...form,
-        saga: isJeux ? undefined : (form.saga ? normalizeSaga(form.saga) : undefined),
-      };
+      // Règles de normalisation:
+      // - Page JEUX  : saga = undefined (on ne stocke pas "JEUX"), status forcé ≠ "todo"
+      // - Page TODO  : status = "todo" (saga inchangée/optionnelle)
+      // - Page Saga  : saga = nom normalisé de la saga, status ≠ "todo"
+      const base: any = { ...form };
+
+      if (isJeux) {
+        base.saga = undefined;
+        if (base.status === "todo") base.status = undefined;
+      } else if (isTodo) {
+        base.status = "todo";
+        // garder base.saga tel que saisi (optionnel)
+      } else {
+        base.saga = normalizeSaga(form.saga || sagaCanonical);
+        if (base.status === "todo") base.status = undefined;
+      }
 
       if (editingGame?.id) {
-        await updateGame(editingGame.id, payload);
+        await updateGame(editingGame.id, base);
         toast({ title: "Jeu mis à jour" });
       } else {
-        await createGame(payload);
+        await createGame(base);
         toast({ title: "Jeu ajouté" });
       }
       setIsFormOpen(false);
@@ -175,7 +196,6 @@ export default function SagaPage() {
     const [moved] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, moved);
 
-    // Normalise order = index
     await Promise.all(arr.map((g, idx) => updateGame(g.id, { ...g, order: idx })));
     refresh();
   };
@@ -192,7 +212,7 @@ export default function SagaPage() {
             </Button>
             <div>
               <h1 className="text-xl sm:text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-                {isJeux ? SANS_SAGA_NAME : sagaCanonical}
+                {displayName}
               </h1>
               <p className="text-muted-foreground text-sm">
                 {games.length} jeu{games.length > 1 ? "x" : ""}
@@ -228,7 +248,7 @@ export default function SagaPage() {
         {/* Grille */}
         {games.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
-            Aucun jeu dans cette {isJeux ? "section" : "saga"}.
+            Aucun jeu dans cette {isJeux ? "section" : isTodo ? "liste" : "saga"}.
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
@@ -362,8 +382,8 @@ export default function SagaPage() {
                   rating: 3,
                   genres: [],
                   platform: "",
-                  // Sur JEUX on ne préremplit pas de saga
-                  saga: isJeux ? undefined : sagaCanonical,
+                  saga: isJeux ? undefined : (isTodo ? "" : sagaCanonical),
+                  // on ne préremplit pas status “todo” ici, on le force au save si isTodo
                   order:
                     games.length > 0
                       ? (games[games.length - 1].order ?? games.length - 1) + 1
@@ -408,6 +428,7 @@ export default function SagaPage() {
                     {viewingGame.platform && <div>Plateforme : {viewingGame.platform}</div>}
                     {typeof viewingGame.rating === "number" && <div>Note : {viewingGame.rating}/5</div>}
                     {viewingGame.saga && <div>Saga : {normalizeSaga(viewingGame.saga)}</div>}
+                    {(viewingGame as any).status === "todo" && <div>A faire</div>}
                   </div>
 
                   {!!viewingGame.genres?.length && (
