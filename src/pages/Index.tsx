@@ -1,3 +1,4 @@
+// src/pages/Index.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Gamepad2, Plus, MoreVertical, Upload, Download } from "lucide-react";
@@ -39,7 +40,6 @@ export default function Index() {
     sortOrder: "desc",
   });
 
-  // ---- Load ----
   async function refresh() {
     try {
       const data = await listGames();
@@ -56,36 +56,38 @@ export default function Index() {
     refresh();
   }, []);
 
-  // ---- Platforms for filters ----
-  const availablePlatforms = useMemo(() => {
-    return Array.from(
-      new Set(games.map((g) => g.platform).filter(Boolean) as string[])
-    ).sort();
-  }, [games]);
+  // ---- Séparation collection / backlog ----
+  const backlogGames = useMemo(() => games.filter((g: any) => g.backlog === true), [games]);
+  const collectionGames = useMemo(() => games.filter((g: any) => g.backlog !== true), [games]);
 
-  // ---- Filtering (game-level) ----
+  // Plateformes (sur la partie collection uniquement)
+  const availablePlatforms = useMemo(() => {
+    return Array.from(new Set(collectionGames.map((g) => g.platform).filter(Boolean) as string[])).sort();
+  }, [collectionGames]);
+
+  // Filtrage/Recherche (collection uniquement)
   const matchingGames: GameDTO[] = useMemo(() => {
     const term = filters.search.trim().toLowerCase();
-    return games.filter((game) => {
+    return collectionGames.filter((game) => {
       if (term && !game.title?.toLowerCase().includes(term)) return false;
       if (filters.genres.length > 0 && !filters.genres.some((g) => (game.genres || []).includes(g))) return false;
       if ((game.rating ?? 0) < filters.minRating) return false;
       if (filters.platform && game.platform !== filters.platform) return false;
       return true;
     });
-  }, [games, filters]);
+  }, [collectionGames, filters]);
 
   const hasActiveSearch = filters.search.trim().length > 0;
 
-  // ---- Grouping into sagas from the already-filtered list ----
   type SagaGroup = {
-    name: string;     // display (UPPERCASE)
-    slug: string;     // /s/<slug>
+    name: string;
+    slug: string;
     items: GameDTO[];
     cover?: string;
     count: number;
   };
 
+  // Groupage par saga sur la collection uniquement
   const { jeuxGroup, sagaGroups } = useMemo(() => {
     const map = new Map<string, GameDTO[]>();
     for (const g of matchingGames) {
@@ -118,16 +120,9 @@ export default function Index() {
     return { jeuxGroup, sagaGroups: sagas };
   }, [matchingGames]);
 
-  // ---- Create / update ----
-  const handleSaveGame = async (
-    gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
-  ) => {
+  const handleSaveGame = async (gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">) => {
     try {
-      const payload = {
-        ...gameData,
-        saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
-      };
-
+      const payload = { ...gameData, saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined };
       if (editingGame?.id != null) {
         await updateGame(editingGame.id, payload);
         toast({ title: "Jeu mis à jour" });
@@ -147,7 +142,6 @@ export default function Index() {
     }
   };
 
-  // ---- Export ----
   const handleExportAll = () => {
     try {
       const data = JSON.stringify(games, null, 2);
@@ -171,7 +165,6 @@ export default function Index() {
     }
   };
 
-  // ---- Import ----
   const handleImport = (file: File) => {
     const reader = new FileReader();
     reader.onload = async () => {
@@ -179,10 +172,7 @@ export default function Index() {
         const payload = JSON.parse(String(reader.result)) as GameDTO[];
         for (const g of payload) {
           const { id, createdAt, updatedAt, ...rest } = g as any;
-          await createGame({
-            ...rest,
-            saga: rest.saga ? normalizeSaga(rest.saga) : undefined,
-          });
+          await createGame({ ...rest, saga: rest.saga ? normalizeSaga(rest.saga) : undefined });
         }
         toast({ title: "Import JSON", description: "Import terminé." });
         refresh();
@@ -197,59 +187,39 @@ export default function Index() {
     reader.readAsText(file);
   };
 
-  // --- helpers for result links ---
   const sagaSlugFor = (g: GameDTO) => {
     const nameUpper = normalizeSaga(g.saga) || SANS_SAGA_NAME;
     return nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
   };
 
-  // ===== Bulk actions on sagas (rename / delete -> move to JEUX) =====
+  // ===== Rename/Delete saga (inchangé) =====
   const renameSaga = async (group: SagaGroup) => {
     const current = group.name;
     if (current === SANS_SAGA_NAME) return;
-
     const proposed = window.prompt("New saga name:", current);
     const newName = (proposed || "").trim();
     if (!newName || normalizeSaga(newName) === current) return;
 
     try {
-      await Promise.all(
-        group.items.map((g) =>
-          updateGame(g.id, { ...g, saga: normalizeSaga(newName) })
-        )
-      );
+      await Promise.all(group.items.map((g) => updateGame(g.id, { ...g, saga: normalizeSaga(newName) })));
       toast({ title: "Saga renamed", description: `${current} → ${normalizeSaga(newName)}` });
       refresh();
     } catch (e: any) {
-      toast({
-        title: "Rename failed",
-        description: e?.message || "Unable to rename saga.",
-        variant: "destructive",
-      });
+      toast({ title: "Rename failed", description: e?.message || "Unable to rename saga.", variant: "destructive" });
     }
   };
 
   const deleteSagaToJeux = async (group: SagaGroup) => {
     const current = group.name;
     if (current === SANS_SAGA_NAME) return;
-
-    const ok = window.confirm(
-      `Delete saga “${current}” ?\n\nThis will NOT delete games.\nAll games will be moved to JEUX.`
-    );
+    const ok = window.confirm(`Delete saga “${current}” ?\n\nThis will NOT delete games.\nAll games will be moved to JEUX.`);
     if (!ok) return;
-
     try {
-      await Promise.all(
-        group.items.map((g) => updateGame(g.id, { ...g, saga: undefined }))
-      );
+      await Promise.all(group.items.map((g) => updateGame(g.id, { ...g, saga: undefined })));
       toast({ title: "Saga deleted", description: `Games moved to ${SANS_SAGA_NAME}.` });
       refresh();
     } catch (e: any) {
-      toast({
-        title: "Delete failed",
-        description: e?.message || "Unable to delete saga.",
-        variant: "destructive",
-      });
+      toast({ title: "Delete failed", description: e?.message || "Unable to delete saga.", variant: "destructive" });
     }
   };
 
@@ -266,13 +236,13 @@ export default function Index() {
               <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
                 Ma Collection
               </h1>
+              {/* total = collection uniquement (exclut backlog) */}
               <p className="text-sm sm:text-base text-muted-foreground">
-                {games.length} {games.length > 1 ? "jeux" : "jeu"}
+                {collectionGames.length} {collectionGames.length > 1 ? "jeux" : "jeu"}
               </p>
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -319,22 +289,33 @@ export default function Index() {
           </div>
         </div>
 
-        {/* Search + Filters */}
+        {/* Barre de recherche */}
         <div className="mb-3 sm:mb-4">
-          <SearchAndFilters
-            filters={filters}
-            onFiltersChange={setFilters}
-            availablePlatforms={availablePlatforms}
-          />
+          <SearchAndFilters filters={filters} onFiltersChange={setFilters} availablePlatforms={availablePlatforms} />
         </div>
 
-        {/* ===== Results (game cards) when searching ===== */}
+        {/* ===== Bannière À FAIRE (backlog) ===== */}
+        {backlogGames.length > 0 && (
+          <Link
+            to="/a-faire"
+            className="relative mb-6 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+          >
+            <img
+              src="/banner_afaire_1600x450.jpg"
+              srcSet="/banner_afaire_1024x360.jpg 1024w, /banner_afaire_1600x450.jpg 1600w, /banner_afaire_1920x500.jpg 1920w"
+              sizes="(max-width: 640px) 100vw, (max-width: 1280px) 90vw, 1200px"
+              alt="Section À FAIRE"
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ objectPosition: "center 50%" }}
+            />
+            <div className="relative flex min-h-[120px] sm:min-h-[140px] lg:min-h-[160px]" />
+          </Link>
+        )}
+
+        {/* ===== Résultats recherche (collection) ===== */}
         {hasActiveSearch && (
           <>
-            <h2 className="text-lg font-semibold mb-3">
-              Résultats ({matchingGames.length})
-            </h2>
-
+            <h2 className="text-lg font-semibold mb-3">Résultats ({matchingGames.length})</h2>
             {matchingGames.length === 0 ? (
               <div className="text-muted-foreground mb-8">Aucun jeu trouvé.</div>
             ) : (
@@ -362,9 +343,7 @@ export default function Index() {
                       )}
                       <div className="p-3">
                         <div className="font-semibold leading-tight line-clamp-2">{g.title}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {normalizeSaga(g.saga) || SANS_SAGA_NAME}
-                        </div>
+                        <div className="text-xs text-muted-foreground">{normalizeSaga(g.saga) || SANS_SAGA_NAME}</div>
                       </div>
                     </Link>
                   );
@@ -374,7 +353,7 @@ export default function Index() {
           </>
         )}
 
-        {/* === JEUX banner (no overlay/no caption) === */}
+        {/* ===== Bannière JEUX ===== */}
         {jeuxGroup && (
           <Link
             to={`/s/${jeuxGroup.slug}`}
@@ -392,7 +371,7 @@ export default function Index() {
           </Link>
         )}
 
-        {/* Sagas */}
+        {/* ===== Sagas (collection) ===== */}
         <h2 className="text-lg font-semibold mb-3">Sagas</h2>
         {sagaGroups.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">Aucune saga.</div>
@@ -400,7 +379,6 @@ export default function Index() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
             {sagaGroups.map((g) => (
               <div key={g.slug} className="relative">
-                {/* ⋯ menu (hidden for JEUX) */}
                 {g.name !== SANS_SAGA_NAME && (
                   <div className="absolute top-2 right-2 z-10">
                     <DropdownMenu>
@@ -410,9 +388,7 @@ export default function Index() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">
-                        <DropdownMenuItem onClick={() => renameSaga(g)}>
-                          Renommer la saga…
-                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => renameSaga(g)}>Renommer la saga…</DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
                           onClick={() => deleteSagaToJeux(g)}
@@ -440,9 +416,7 @@ export default function Index() {
                     </div>
                   )}
                   <div className="p-3">
-                    <div className="font-semibold leading-tight line-clamp-2 uppercase">
-                      {g.name}
-                    </div>
+                    <div className="font-semibold leading-tight line-clamp-2 uppercase">{g.name}</div>
                     <div className="text-xs text-muted-foreground">
                       {g.count} jeu{g.count > 1 ? "x" : ""}
                     </div>
@@ -464,9 +438,7 @@ export default function Index() {
                 setEditingGame(null);
               }}
               availableSagas={Array.from(
-                new Set(
-                  games.map((g) => normalizeSaga(g.saga)).filter(Boolean) as string[]
-                )
+                new Set(collectionGames.map((g) => normalizeSaga(g.saga)).filter(Boolean) as string[])
               ).sort()}
             />
           </DialogContent>
