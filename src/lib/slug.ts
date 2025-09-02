@@ -1,73 +1,51 @@
-// src/lib/slug.ts
+// Robust, centralized slug + saga normalization
+// - Treats hyphens and other separators as spaces (so "HALF-LIFE" == "HALF LIFE")
+// - Removes accents/diacritics
+// - Deduplicates whitespace
+// - Uppercases for display-normalized saga names
+// - Lowercases + hyphen-joins for URL slugs
 
-/**
- * Slug cohérent + robuste : supprime accents, ponctuation, met en minuscules,
- * remplace par des tirets et condense.
- */
-export function slugify(input: string): string {
-  return (input || "")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replace(/&/g, "and")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-}
-
-/** conversion très simple de chiffres romains courants => nombre */
-function romanToInt(s: string): number {
-  const map: Record<string, number> = {
-    m: 1000, d: 500, c: 100, l: 50, x: 10, v: 5, i: 1,
-  };
-  let res = 0;
-  const r = (s || "").toLowerCase();
-  for (let i = 0; i < r.length; i++) {
-    const v = map[r[i]] || 0;
-    const next = map[r[i + 1]] || 0;
-    res += next > v ? next - v && (i++, next - v) : v;
-  }
-  return res || Number.POSITIVE_INFINITY;
+function stripDiacritics(input: string): string {
+  return input.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 /**
- * Retourne une "clé de tri" numérique si on trouve un numéro (chiffre ou romain)
- * dans le titre. Permet de choisir "le 1" d'abord quand on n'a pas d'ordre enregistré.
+ * Normalize a saga name for grouping/uniqueness (DISPLAY KEY).
+ * Examples:
+ *  - "Half-Life", "Half Life", "HALF-LIFE" -> "HALF LIFE"
+ *  - "Crash: Bandicoot" -> "CRASH BANDICOOT"
  */
-export function numberKeyFromTitle(title?: string): number {
-  if (!title) return Number.POSITIVE_INFINITY;
+export function normalizeSaga(raw?: string | null): string {
+  if (!raw) return "";
+  let s = stripDiacritics(String(raw));
 
-  // ex: "Dragon Quest XI" / "Final Fantasy 7" / "Resident Evil 2 Remake"
-  const arabic = title.match(/(?<![a-z])(\d{1,3})(?![a-z])/i);
-  if (arabic) return parseInt(arabic[1], 10);
+  // Unify separators as spaces (hyphen, underscore, dot, slash, colon, pipe…)
+  s = s.replace(/[-_.:/\\|]+/g, " ");
 
-  const roman = title.match(/\b([MDCLXVI]{1,6})\b/i);
-  if (roman) return romanToInt(roman[1]);
+  // Remove remaining non-alphanumeric except spaces
+  s = s.replace(/[^a-zA-Z0-9 ]+/g, " ");
 
-  return Number.POSITIVE_INFINITY;
+  // Collapse repeated spaces and trim
+  s = s.replace(/\s+/g, " ").trim();
+
+  // Uppercase for canonical display/group key
+  return s.toUpperCase();
 }
 
-/* ------------------------------------------------------------------ */
-/*                Helpers dédiés aux SLUGS DE SAGAS                   */
-/* ------------------------------------------------------------------ */
+/**
+ * Create a URL-safe slug from any label.
+ * Examples:
+ *  - "HALF LIFE" -> "half-life"
+ *  - "Crash Bandicoot" -> "crash-bandicoot"
+ */
+export function slugify(raw?: string | null): string {
+  if (!raw) return "";
+  let s = stripDiacritics(String(raw));
 
-/** saga -> slug : "" (jeux sans saga) => "jeux", sinon slugify */
-export function toSlugSaga(saga?: string): string {
-  const s = (saga ?? "").trim();
-  if (s === "") return "jeux";
-  return slugify(s);
-}
+  // Same separator policy, but final form is hyphen-joined lowercase
+  s = s.replace(/[-_.:/\\|]+/g, " ");
+  s = s.replace(/[^a-zA-Z0-9 ]+/g, " ");
+  s = s.replace(/\s+/g, " ").trim();
 
-/** slug -> saga : "jeux" => "" (clé logique), sinon "dragon-quest" => "dragon quest" */
-export function fromSlugSaga(slug?: string): string {
-  const s = (slug ?? "").trim().toLowerCase();
-  if (s === "" || s === "jeux") return "";
-  return s.replace(/-/g, " ").trim();
-}
-
-/** Uniformise le nom de saga : trim + Title Case */
-export function normalizeSaga(input?: string): string {
-  if (!input) return "";
-  const s = input.trim().toLowerCase();
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  return s.toLowerCase().replace(/ /g, "-");
 }
