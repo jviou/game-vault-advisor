@@ -1,5 +1,5 @@
 // src/pages/TodoPage.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, MoreVertical, Pencil, Trash2, CheckCircle2 } from "lucide-react";
 
@@ -136,7 +136,8 @@ export default function TodoPage() {
               <GameForm
                 game={editingGame as any}
                 onSave={async (form) => {
-                  await updateGame(editingGame!.id, form as any);
+                  // IMPORTANT : on conserve/force backlog=true pour rester dans la page
+                  await updateGame(editingGame!.id, { ...(form as any), backlog: true } as any);
                   setIsFormOpen(false);
                   setEditingGame(null);
                   refresh();
