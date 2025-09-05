@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { Game, DEFAULT_GENRES } from "@/types/game";
 import { CoverPicker } from "@/components/CoverPicker";
 
@@ -16,17 +17,23 @@ interface GameFormProps {
   availableSagas?: string[];
 }
 
-export const GameForm = ({ game, onSave, onCancel, availableSagas = [], }: GameFormProps) => {
+export const GameForm = ({
+  game,
+  onSave,
+  onCancel,
+  availableSagas = [],
+}: GameFormProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
     title: game?.title || "",
     coverUrl: game?.coverUrl || "",
     rating: game?.rating || 1,
-    genres: game?.genres || [],
+    genres: game?.genres || [] as string[],
     whyLiked: game?.whyLiked || "",
     platform: game?.platform || "",
     saga: game?.saga || "",
+    backlog: !!game?.backlog,              // <<—— NEW
   });
 
   const [customGenre, setCustomGenre] = useState("");
@@ -84,7 +91,8 @@ export const GameForm = ({ game, onSave, onCancel, availableSagas = [], }: GameF
       whyLiked: formData.whyLiked.trim() || undefined,
       platform: formData.platform.trim() || undefined,
       saga: formData.saga.trim() || undefined,
-    });
+      backlog: formData.backlog,           // <<—— NEW
+    } as any);
   };
 
   return (
@@ -190,8 +198,12 @@ export const GameForm = ({ game, onSave, onCancel, availableSagas = [], }: GameF
               <TabsContent value="search" className="space-y-3">
                 <CoverPicker
                   gameTitle={formData.title}
-                  onTitlePick={(t) => setFormData(prev => ({ ...prev, title: t }))}   // <-- NOUVEAU
-                  onCoverSelect={(url) => setFormData(prev => ({ ...prev, coverUrl: url }))}
+                  onTitlePick={(t) =>
+                    setFormData((prev) => ({ ...prev, title: t }))
+                  }
+                  onCoverSelect={(url) =>
+                    setFormData((prev) => ({ ...prev, coverUrl: url }))
+                  }
                 />
               </TabsContent>
             </Tabs>
@@ -288,7 +300,6 @@ export const GameForm = ({ game, onSave, onCancel, availableSagas = [], }: GameF
           />
         </div>
 
-
         {/* Saga */}
         <div className="space-y-2">
           <Label htmlFor="saga">Saga</Label>
@@ -297,16 +308,15 @@ export const GameForm = ({ game, onSave, onCancel, availableSagas = [], }: GameF
             list="saga-list"
             placeholder="Ex. : Dragon Quest, Zelda, Final Fantasy…"
             value={formData.saga}
-            onChange={(e) => setFormData(prev => ({ ...prev, saga: e.target.value }))}
-           />
-           <datalist id="saga-list">
-             {(availableSagas || []).map((s) => (
-               <option key={s} value={s} />
-             ))}
-           </datalist>
+            onChange={(e) => setFormData((prev) => ({ ...prev, saga: e.target.value }))}
+          />
+          <datalist id="saga-list">
+            {(availableSagas || []).map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
         </div>
 
-        
         {/* Platform */}
         <div className="space-y-2">
           <Label htmlFor="platform">Plateforme</Label>
@@ -317,6 +327,20 @@ export const GameForm = ({ game, onSave, onCancel, availableSagas = [], }: GameF
               setFormData((prev) => ({ ...prev, platform: e.target.value }))
             }
             placeholder="PS5, PC, Switch..."
+          />
+        </div>
+
+        {/* Backlog / À FAIRE */}
+        <div className="flex items-center justify-between border rounded-lg p-3">
+          <div className="space-y-0.5">
+            <Label>Ajouter à « À FAIRE »</Label>
+            <p className="text-xs text-muted-foreground">
+              Si activé, le jeu apparaît dans la liste À FAIRE et n’est pas compté dans la collection.
+            </p>
+          </div>
+          <Switch
+            checked={formData.backlog}
+            onCheckedChange={(v) => setFormData((p) => ({ ...p, backlog: v }))}
           />
         </div>
 
