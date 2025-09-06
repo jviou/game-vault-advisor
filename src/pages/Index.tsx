@@ -1,4 +1,3 @@
-// src/pages/Index.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Gamepad2, Plus, MoreVertical, Upload, Download, Inbox } from "lucide-react";
@@ -23,7 +22,6 @@ import { slugify, normalizeSaga } from "@/lib/slug";
 
 const SANS_SAGA_NAME = "JEUX";
 const SANS_SAGA_SLUG = "jeux";
-const TODO_SLUG = "a-faire";
 
 export default function Index() {
   const { toast } = useToast();
@@ -58,24 +56,40 @@ export default function Index() {
     refresh();
   }, []);
 
-  // ---- Plateformes disponibles pour le filtre ----
-  const availablePlatforms = useMemo(() => {
-    return Array.from(
-      new Set(games.map((g) => g.platform).filter(Boolean) as string[])
-    ).sort();
-  }, [games]);
-
-  // ---- Filtrage par JEUX (on exclut le backlog À FAIRE) ----
+  // Séparation collection / backlog
+  const backlogGames = useMemo(
+    () => games.filter((g) => !!(g as any).backlog),
+    [games]
+  );
   const collectionGames = useMemo(
-    () => games.filter((g) => g.backlog !== true),
+    () => games.filter((g) => !(g as any).backlog),
     [games]
   );
 
-  // ---- Recherche au niveau des JEUX (titres) ----
-  const matchingGames: GameDTO[] = useMemo(() => {
-    const term = filters.search.trim().toLowerCase();
+  // Compteur d’en-tête (n’inclut pas le backlog)
+  const headerCount = collectionGames.length;
+
+  // ---- Plateformes pour filtre ----
+  const availablePlatforms = useMemo(() => {
+    return Array.from(
+      new Set(collectionGames.map((g) => g.platform).filter(Boolean) as string[])
+    ).sort();
+  }, [collectionGames]);
+
+  // ---- Groupage JEUX / SAGAS sur la *collection* (hors backlog) ----
+  type SagaGroup = {
+    name: string;
+    slug: string;
+    items: GameDTO[];
+    cover?: string;
+    count: number;
+  };
+
+  const { jeuxGroup, sagaGroups } = useMemo(() => {
+    // applique filtres sur la *collection* (hors backlog)
     const filtered = collectionGames.filter((game) => {
-      if (term && !game.title?.toLowerCase().includes(term)) return false;
+      if (filters.search && !game.title?.toLowerCase().includes(filters.search.toLowerCase()))
+        return false;
       if (
         filters.genres.length > 0 &&
         !filters.genres.some((g) => (game.genres || []).includes(g))
@@ -86,33 +100,8 @@ export default function Index() {
       return true;
     });
 
-    // tri léger pour l’affichage
-    filtered.sort((a, b) => {
-      const ao = a.order ?? Number.POSITIVE_INFINITY;
-      const bo = b.order ?? Number.POSITIVE_INFINITY;
-      if (ao !== bo) return ao - bo;
-      const ac = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const bc = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return ac - bc;
-    });
-
-    return filtered;
-  }, [collectionGames, filters]);
-
-  const hasActiveSearch = filters.search.trim().length > 0;
-
-  // ---- Groupage JEUX / SAGAS (depuis la liste filtrée) ----
-  type SagaGroup = {
-    name: string; // affichage (majuscule)
-    slug: string; // /s/<slug>
-    items: GameDTO[];
-    cover?: string;
-    count: number;
-  };
-
-  const { jeuxGroup, sagaGroups } = useMemo(() => {
     const map = new Map<string, GameDTO[]>();
-    for (const g of matchingGames) {
+    for (const g of filtered) {
       const key = normalizeSaga(g.saga) || SANS_SAGA_NAME;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(g);
@@ -122,7 +111,7 @@ export default function Index() {
     const sagas: SagaGroup[] = [];
 
     for (const [nameUpper, items] of map.entries()) {
-      // cover = 1er jeu (ordre)
+      // tri interne pour cover stable
       const sorted = [...items].sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -132,8 +121,7 @@ export default function Index() {
         return ac - bc;
       });
       const cover = sorted[0]?.coverUrl;
-      const slug =
-        nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
+      const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
 
       const group = { name: nameUpper, slug, items, cover, count: items.length };
       if (nameUpper === SANS_SAGA_NAME) jeuxGroup = group;
@@ -142,23 +130,16 @@ export default function Index() {
 
     sagas.sort((a, b) => a.name.localeCompare(b.name));
     return { jeuxGroup, sagaGroups: sagas };
-  }, [matchingGames]);
+  }, [collectionGames, filters]);
 
-  const backlogCount = useMemo(
-    () => games.filter((g) => g.backlog === true).length,
-    [games]
-  );
-
-  // ---- Ajouter / Modifier ----
+  // ---- Créer / Modifier ----
   const handleSaveGame = async (
     gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
     try {
-      const payload = {
+      const payload: any = {
         ...gameData,
-        // normalise la saga pour éviter les doublons Crash/CRASH
         saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
-        backlog: false as any, // l’ajout ici va dans la collection (pas dans À FAIRE)
       };
 
       if (editingGame?.id != null) {
@@ -194,7 +175,10 @@ export default function Index() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast({ title: "Export JSON", description: "La collection a été exportée." });
+      toast({
+        title: "Export JSON",
+        description: "La collection a été exportée.",
+      });
     } catch (e: any) {
       toast({
         title: "Export échoué",
@@ -243,9 +227,8 @@ export default function Index() {
               <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
                 Ma Collection
               </h1>
-              {/* On affiche le total hors backlog */}
               <p className="text-sm sm:text-base text-muted-foreground">
-                {collectionGames.length} {collectionGames.length > 1 ? "jeux" : "jeu"}
+                {headerCount} {headerCount > 1 ? "jeux" : "jeu"}
               </p>
             </div>
           </div>
@@ -280,12 +263,6 @@ export default function Index() {
                   <Download className="w-4 h-4 mr-2" />
                   Exporter JSON
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to={`/${TODO_SLUG}`} className="cursor-pointer">
-                    <Inbox className="w-4 h-4 mr-2" />
-                    Ouvrir « À FAIRE » ({backlogCount})
-                  </Link>
-                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -303,7 +280,7 @@ export default function Index() {
           </div>
         </div>
 
-        {/* Search + Filters */}
+        {/* Filtres */}
         <div className="mb-3 sm:mb-4">
           <SearchAndFilters
             filters={filters}
@@ -312,11 +289,12 @@ export default function Index() {
           />
         </div>
 
-        {/* === Bannière JEUX (image fixe, sans overlay) === */}
+        {/* === Bannière JEUX (collection) === */}
         {jeuxGroup && (
           <Link
             to={`/s/${jeuxGroup.slug}`}
-            className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+            className="relative mb-5 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+            aria-label="Aller à la section JEUX"
           >
             <img
               src="/banner_jeux_1600x450.jpg"
@@ -326,71 +304,33 @@ export default function Index() {
               className="absolute inset-0 h-full w-full object-cover"
               style={{ objectPosition: "center 50%" }}
             />
-            {/* espace cliquable */}
             <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px]" />
           </Link>
         )}
 
-        {/* Lien rapide vers À FAIRE */}
-        <div className="mb-6 -mt-2">
-          <Link
-            to={`/${TODO_SLUG}`}
-            className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
-            title="Voir ma liste À FAIRE"
-          >
-            <Inbox className="w-4 h-4" />
-            Voir « À FAIRE » ({backlogCount})
-          </Link>
-        </div>
+        {/* === Bannière À FAIRE (backlog) === */}
+        <Link
+          to="/todo"
+          className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+          aria-label="Aller à la section À FAIRE"
+        >
+          <img
+            src="/banner_todo_1600x450.jpg"
+            srcSet="/banner_todo_1024x360.jpg 1024w, /banner_todo_1600x450.jpg 1600w, /banner_todo_1920x500.jpg 1920w"
+            sizes="(max-width: 640px) 100vw, (max-width: 1280px) 90vw, 1200px"
+            alt="Section À FAIRE"
+            className="absolute inset-0 h-full w-full object-cover"
+            style={{ objectPosition: "center 50%" }}
+          />
+          <div className="relative flex min-h-[120px] sm:min-h-[140px] lg:min-h-[160px] items-center p-4">
+            <div className="ml-auto mr-2 flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-white text-xs sm:text-sm">
+              <Inbox className="w-4 h-4" />
+              À FAIRE : {backlogGames.length}
+            </div>
+          </div>
+        </Link>
 
-        {/* ===== Résultats (grille de JEUX) en cas de recherche ===== */}
-        {hasActiveSearch && (
-          <>
-            <h2 className="text-lg font-semibold mb-3">
-              Résultats ({matchingGames.length})
-            </h2>
-
-            {matchingGames.length === 0 ? (
-              <div className="text-muted-foreground mb-8">Aucun jeu trouvé.</div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 mb-8">
-                {matchingGames.map((g) => {
-                  const nameUpper = normalizeSaga(g.saga) || SANS_SAGA_NAME;
-                  const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
-                  const to = `/s/${slug}?q=${encodeURIComponent(filters.search.trim())}`;
-                  return (
-                    <Link
-                      key={g.id}
-                      to={to}
-                      className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
-                    >
-                      {g.coverUrl ? (
-                        <img
-                          src={g.coverUrl}
-                          alt={g.title}
-                          className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
-                          Pas de jaquette
-                        </div>
-                      )}
-                      <div className="p-3">
-                        <div className="font-semibold leading-tight line-clamp-2">{g.title}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {nameUpper}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Sagas */}
+        {/* Sagas (collection) */}
         <h2 className="text-lg font-semibold mb-3">Sagas</h2>
         {sagaGroups.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">Aucune saga.</div>
@@ -399,7 +339,7 @@ export default function Index() {
             {sagaGroups.map((g) => (
               <Link
                 key={g.slug}
-                to={`/s/${g.slug}${hasActiveSearch ? `?q=${encodeURIComponent(filters.search.trim())}` : ""}`}
+                to={`/s/${g.slug}`}
                 className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
               >
                 {g.cover ? (
@@ -426,7 +366,7 @@ export default function Index() {
           </div>
         )}
 
-        {/* Dialog Ajouter/Modifier (ajout côté collection) */}
+        {/* Dialog Ajouter/Modifier */}
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <GameForm
@@ -447,7 +387,7 @@ export default function Index() {
           </DialogContent>
         </Dialog>
 
-        {/* FAB mobile “+” */}
+        {/* FAB mobile */}
         <Button
           className="fixed sm:hidden bottom-4 right-4 rounded-full h-12 w-12 shadow-glow-primary"
           onClick={() => {
