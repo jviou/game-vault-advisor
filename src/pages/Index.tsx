@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Gamepad2, Plus, MoreVertical, Upload, Download, Inbox } from "lucide-react";
+import { Gamepad2, Plus, MoreVertical, Upload, Download, ClipboardList } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -56,27 +56,39 @@ export default function Index() {
     refresh();
   }, []);
 
-  // Séparation collection / backlog
-  const backlogGames = useMemo(
-    () => games.filter((g) => !!(g as any).backlog),
-    [games]
-  );
-  const collectionGames = useMemo(
-    () => games.filter((g) => !(g as any).backlog),
+  const backlogCount = useMemo(
+    () => games.filter((g) => g.backlog === true).length,
     [games]
   );
 
-  // Compteur d’en-tête (n’inclut pas le backlog)
-  const headerCount = collectionGames.length;
-
-  // ---- Plateformes pour filtre ----
+  // ---- Plateformes disponibles pour le filtre ----
   const availablePlatforms = useMemo(() => {
     return Array.from(
-      new Set(collectionGames.map((g) => g.platform).filter(Boolean) as string[])
+      new Set(games.map((g) => g.platform).filter(Boolean) as string[])
     ).sort();
-  }, [collectionGames]);
+  }, [games]);
 
-  // ---- Groupage JEUX / SAGAS sur la *collection* (hors backlog) ----
+  // ---- Filtrage par jeu (hors backlog) ----
+  const matchingGames: GameDTO[] = useMemo(() => {
+    const term = filters.search.trim().toLowerCase();
+    return games
+      .filter((g) => g.backlog !== true) // <= ne pas mélanger avec "À FAIRE"
+      .filter((game) => {
+        if (term && !game.title?.toLowerCase().includes(term)) return false;
+        if (
+          filters.genres.length > 0 &&
+          !filters.genres.some((g) => (game.genres || []).includes(g))
+        )
+          return false;
+        if ((game.rating ?? 0) < filters.minRating) return false;
+        if (filters.platform && game.platform !== filters.platform) return false;
+        return true;
+      });
+  }, [games, filters]);
+
+  const hasActiveSearch = filters.search.trim().length > 0;
+
+  // ---- Groupage (depuis la liste déjà filtrée) ----
   type SagaGroup = {
     name: string;
     slug: string;
@@ -86,22 +98,8 @@ export default function Index() {
   };
 
   const { jeuxGroup, sagaGroups } = useMemo(() => {
-    // applique filtres sur la *collection* (hors backlog)
-    const filtered = collectionGames.filter((game) => {
-      if (filters.search && !game.title?.toLowerCase().includes(filters.search.toLowerCase()))
-        return false;
-      if (
-        filters.genres.length > 0 &&
-        !filters.genres.some((g) => (game.genres || []).includes(g))
-      )
-        return false;
-      if ((game.rating ?? 0) < filters.minRating) return false;
-      if (filters.platform && game.platform !== filters.platform) return false;
-      return true;
-    });
-
     const map = new Map<string, GameDTO[]>();
-    for (const g of filtered) {
+    for (const g of matchingGames) {
       const key = normalizeSaga(g.saga) || SANS_SAGA_NAME;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(g);
@@ -111,7 +109,6 @@ export default function Index() {
     const sagas: SagaGroup[] = [];
 
     for (const [nameUpper, items] of map.entries()) {
-      // tri interne pour cover stable
       const sorted = [...items].sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -121,7 +118,8 @@ export default function Index() {
         return ac - bc;
       });
       const cover = sorted[0]?.coverUrl;
-      const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
+      const slug =
+        nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
 
       const group = { name: nameUpper, slug, items, cover, count: items.length };
       if (nameUpper === SANS_SAGA_NAME) jeuxGroup = group;
@@ -130,14 +128,14 @@ export default function Index() {
 
     sagas.sort((a, b) => a.name.localeCompare(b.name));
     return { jeuxGroup, sagaGroups: sagas };
-  }, [collectionGames, filters]);
+  }, [matchingGames]);
 
-  // ---- Créer / Modifier ----
+  // ---- Ajouter / Modifier ----
   const handleSaveGame = async (
     gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
     try {
-      const payload: any = {
+      const payload = {
         ...gameData,
         saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
       };
@@ -228,7 +226,11 @@ export default function Index() {
                 Ma Collection
               </h1>
               <p className="text-sm sm:text-base text-muted-foreground">
-                {headerCount} {headerCount > 1 ? "jeux" : "jeu"}
+                {
+                  // Les jeux de la collection = tous - backlog
+                  games.filter((g) => g.backlog !== true).length
+                }{" "}
+                {games.filter((g) => g.backlog !== true).length > 1 ? "jeux" : "jeu"}
               </p>
             </div>
           </div>
@@ -280,7 +282,7 @@ export default function Index() {
           </div>
         </div>
 
-        {/* Filtres */}
+        {/* Barre de recherche */}
         <div className="mb-3 sm:mb-4">
           <SearchAndFilters
             filters={filters}
@@ -289,48 +291,95 @@ export default function Index() {
           />
         </div>
 
-        {/* === Bannière JEUX (collection) === */}
-        {jeuxGroup && (
+        {/* === Bannières JEUX + À FAIRE === */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+          {/* JEUX */}
           <Link
-            to={`/s/${jeuxGroup.slug}`}
-            className="relative mb-5 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
-            aria-label="Aller à la section JEUX"
+            to={`/s/${SANS_SAGA_SLUG}`}
+            className="relative block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
           >
             <img
               src="/banner_jeux_1600x450.jpg"
               srcSet="/banner_jeux_1024x360.jpg 1024w, /banner_jeux_1600x450.jpg 1600w, /banner_jeux_1920x500.jpg 1920w"
-              sizes="(max-width: 640px) 100vw, (max-width: 1280px) 90vw, 1200px"
+              sizes="(max-width: 1024px) 100vw, 50vw"
               alt="Section JEUX"
               className="absolute inset-0 h-full w-full object-cover"
               style={{ objectPosition: "center 50%" }}
             />
             <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px]" />
           </Link>
+
+          {/* À FAIRE */}
+          <Link
+            to="/todo"
+            className="relative block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+            title="Jeux à faire"
+          >
+            <img
+              src="/banner_todo_1600x450.jpg"
+              srcSet="/banner_todo_1024x360.jpg 1024w, /banner_todo_1600x450.jpg 1600w, /banner_todo_1920x500.jpg 1920w"
+              sizes="(max-width: 1024px) 100vw, 50vw"
+              alt="Section À FAIRE"
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ objectPosition: "center 50%" }}
+            />
+            {/* badge compteur en overlay discret */}
+            <div className="absolute top-3 right-3 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-white text-xs">
+              <ClipboardList className="w-4 h-4" />
+              <span>{backlogCount}</span>
+            </div>
+            <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px]" />
+          </Link>
+        </div>
+
+        {/* ===== Résultats (cartes de jeux) si recherche ===== */}
+        {hasActiveSearch && (
+          <>
+            <h2 className="text-lg font-semibold mb-3">
+              Résultats ({matchingGames.length})
+            </h2>
+
+            {matchingGames.length === 0 ? (
+              <div className="text-muted-foreground mb-8">Aucun jeu trouvé.</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 mb-8">
+                {matchingGames.map((g) => {
+                  const nameUpper = normalizeSaga(g.saga) || SANS_SAGA_NAME;
+                  const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
+                  const to = `/s/${slug}?q=${encodeURIComponent(filters.search.trim())}`;
+                  return (
+                    <Link
+                      key={g.id}
+                      to={to}
+                      className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
+                    >
+                      {g.coverUrl ? (
+                        <img
+                          src={g.coverUrl}
+                          alt={g.title}
+                          className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
+                          Pas de jaquette
+                        </div>
+                      )}
+                      <div className="p-3">
+                        <div className="font-semibold leading-tight line-clamp-2">{g.title}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {nameUpper}
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
 
-        {/* === Bannière À FAIRE (backlog) === */}
-        <Link
-          to="/todo"
-          className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
-          aria-label="Aller à la section À FAIRE"
-        >
-          <img
-            src="/banner_todo_1600x450.jpg"
-            srcSet="/banner_todo_1024x360.jpg 1024w, /banner_todo_1600x450.jpg 1600w, /banner_todo_1920x500.jpg 1920w"
-            sizes="(max-width: 640px) 100vw, (max-width: 1280px) 90vw, 1200px"
-            alt="Section À FAIRE"
-            className="absolute inset-0 h-full w-full object-cover"
-            style={{ objectPosition: "center 50%" }}
-          />
-          <div className="relative flex min-h-[120px] sm:min-h-[140px] lg:min-h-[160px] items-center p-4">
-            <div className="ml-auto mr-2 flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-white text-xs sm:text-sm">
-              <Inbox className="w-4 h-4" />
-              À FAIRE : {backlogGames.length}
-            </div>
-          </div>
-        </Link>
-
-        {/* Sagas (collection) */}
+        {/* ===== Sagas ===== */}
         <h2 className="text-lg font-semibold mb-3">Sagas</h2>
         {sagaGroups.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">Aucune saga.</div>
@@ -339,7 +388,7 @@ export default function Index() {
             {sagaGroups.map((g) => (
               <Link
                 key={g.slug}
-                to={`/s/${g.slug}`}
+                to={`/s/${g.slug}${hasActiveSearch ? `?q=${encodeURIComponent(filters.search.trim())}` : ""}`}
                 className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
               >
                 {g.cover ? (
@@ -378,7 +427,7 @@ export default function Index() {
               }}
               availableSagas={Array.from(
                 new Set(
-                  collectionGames
+                  games
                     .map((g) => normalizeSaga(g.saga))
                     .filter(Boolean) as string[]
                 )
