@@ -1,34 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
-import { MoreVertical, Send, CheckCircle2, Pencil, Trash2 } from "lucide-react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, MoreVertical, Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
 
-import type { GameDTO } from "@/lib/api";
-import { listGames, updateGame, deleteGame, createGame } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import type { GameDTO } from "@/lib/api";
+import { listGames, updateGame, deleteGame } from "@/lib/api";
 import { GameForm } from "@/components/GameForm";
-import { normalizeSaga, slugify, deslugify } from "@/lib/slug";
+import { normalizeSaga, slugify, displaySaga } from "@/lib/slug";
 
 const SANS_SAGA_NAME = "JEUX";
+const SANS_SAGA_SLUG = "jeux";
 
 export default function SagaPage() {
   const { slug } = useParams<{ slug: string }>();
-  const [query] = useSearchParams();
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
   const { toast } = useToast();
 
   const [games, setGames] = useState<GameDTO[]>([]);
-  const [editing, setEditing] = useState<GameDTO | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
-
-  const searchTerm = (query.get("q") || "").toLowerCase();
+  const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
 
   async function refresh() {
     try {
@@ -36,35 +36,36 @@ export default function SagaPage() {
       setGames(data);
     } catch (e: any) {
       toast({
-        title: "Erreur",
-        description: e?.message || "Impossible de charger les jeux.",
+        title: "Erreur de chargement",
+        description: e?.message || "Impossible de charger.",
         variant: "destructive",
       });
     }
   }
   useEffect(() => {
     refresh();
+  }, []);
+
+  // Nom lisible de la saga (slug => UPPER)
+  const wantedUpper = useMemo(() => {
+    if (!slug) return SANS_SAGA_NAME;
+    if (slug === SANS_SAGA_SLUG) return SANS_SAGA_NAME;
+    return displaySaga(slug);
   }, [slug]);
 
-  // Détermination du nom de saga à partir du slug
-  const sagaNameUpper = useMemo(() => {
-    if (!slug) return "";
-    const raw = deslugify(slug);
-    const norm = normalizeSaga(raw);
-    return norm || SANS_SAGA_NAME;
-  }, [slug]);
+  // Filtrage local : hors backlog et par saga
+  const filtered = useMemo(() => {
+    const term = (params.get("q") || "").trim().toLowerCase();
 
-  // Jeux de la saga (hors backlog)
-  const items = useMemo(() => {
-    const isJeux = sagaNameUpper === SANS_SAGA_NAME;
     return games
-      .filter((g) => !(g as any).backlog) // exclure backlog
-      .filter((g) =>
-        isJeux ? !normalizeSaga(g.saga) : normalizeSaga(g.saga) === sagaNameUpper
-      )
-      .filter((g) =>
-        searchTerm ? g.title?.toLowerCase().includes(searchTerm) : true
-      )
+      .filter((g) => g.backlog !== true) // on ne montre pas la TODO ici
+      .filter((g) => {
+        const s = normalizeSaga(g.saga) || SANS_SAGA_NAME;
+        return wantedUpper === SANS_SAGA_NAME
+          ? s === SANS_SAGA_NAME // "JEUX" = pas de saga
+          : s === wantedUpper;
+      })
+      .filter((g) => (term ? g.title?.toLowerCase().includes(term) : true))
       .sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -73,74 +74,22 @@ export default function SagaPage() {
         const bc = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         return ac - bc;
       });
-  }, [games, sagaNameUpper, searchTerm]);
+  }, [games, wantedUpper, params]);
 
-  // Actions
-  const moveToBacklog = async (g: GameDTO) => {
+  const titleForHeader = useMemo(() => {
+    return wantedUpper;
+  }, [wantedUpper]);
+
+  const handleDelete = async (g: GameDTO) => {
+    if (!confirm(`Supprimer “${g.title}” ?`)) return;
     try {
-      await updateGame(g.id!, { backlog: true });
-      toast({ title: `« ${g.title} » envoyé dans À FAIRE` });
+      await deleteGame(g.id);
+      toast({ title: "Jeu supprimé", variant: "destructive" });
       refresh();
     } catch (e: any) {
       toast({
-        title: "Erreur",
-        description: e?.message || "Impossible d’envoyer dans À FAIRE.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const markDone = async (g: GameDTO) => {
-    try {
-      await updateGame(g.id!, { backlog: false });
-      toast({ title: `« ${g.title} » marqué comme fait` });
-      refresh();
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e?.message || "Impossible de marquer comme fait.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const remove = async (g: GameDTO) => {
-    if (!confirm(`Supprimer « ${g.title} » ?`)) return;
-    try {
-      await deleteGame(g.id!);
-      toast({ title: "Jeu supprimé" });
-      refresh();
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
+        title: "Échec",
         description: e?.message || "Impossible de supprimer.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleSaveGame = async (
-    payload: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
-  ) => {
-    try {
-      const data: any = {
-        ...payload,
-        saga: payload.saga ? normalizeSaga(payload.saga) : undefined,
-      };
-      if (editing?.id) {
-        await updateGame(editing.id, data);
-        toast({ title: "Jeu mis à jour" });
-      } else {
-        await createGame(data);
-        toast({ title: "Jeu ajouté" });
-      }
-      setIsFormOpen(false);
-      setEditing(null);
-      refresh();
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e?.message || "Échec de l’enregistrement.",
         variant: "destructive",
       });
     }
@@ -149,32 +98,69 @@ export default function SagaPage() {
   return (
     <div className="min-h-screen bg-gradient-hero">
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
-        <div className="mb-6">
-          <h1 className="text-xl sm:text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent uppercase">
-            {sagaNameUpper}
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            {items.length} jeu{items.length > 1 ? "x" : ""}
-          </p>
+        {/* Header */}
+        <div className="flex items-center justify-between gap-2 mb-6">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+                {titleForHeader}
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                {filtered.length} jeu{filtered.length > 1 ? "x" : ""}
+              </p>
+            </div>
+          </div>
         </div>
 
-        {items.length === 0 ? (
-          <div className="text-center text-muted-foreground py-16">
+        {filtered.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
             Aucun jeu dans cette saga.
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
-            {items.map((g) => (
+            {filtered.map((g) => (
               <div
                 key={g.id}
-                className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+                className="group relative rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card"
               >
+                {/* menu contextuel */}
+                <div
+                  className="absolute top-2 right-2 z-10"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="icon" variant="secondary" className="h-8 w-8">
+                        <MoreVertical className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setEditingGame(g);
+                          setIsFormOpen(true);
+                        }}
+                      >
+                        <Pencil className="w-4 h-4 mr-2" /> Modifier
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => handleDelete(g)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" /> Supprimer
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
                 {g.coverUrl ? (
                   <img
                     src={g.coverUrl}
                     alt={g.title}
                     className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform"
-                    loading="lazy"
                   />
                 ) : (
                   <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center text-muted-foreground">
@@ -182,74 +168,42 @@ export default function SagaPage() {
                   </div>
                 )}
 
-                <div className="flex items-start justify-between p-3">
-                  <div className="pr-2">
-                    <div className="font-semibold leading-tight line-clamp-2">
-                      {g.title}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {g.platform || ""}
-                    </div>
+                <div className="p-3">
+                  <div className="font-semibold leading-tight line-clamp-2">{g.title}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {g.platform || "—"} {typeof g.rating === "number" ? ` • ${g.rating}/5` : ""}
                   </div>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuItem
-                        onClick={() => moveToBacklog(g)}
-                        className="gap-2"
-                      >
-                        <Send className="w-4 h-4" />
-                        Envoyer dans « À FAIRE »
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setEditing(g);
-                          setIsFormOpen(true);
-                        }}
-                        className="gap-2"
-                      >
-                        <Pencil className="w-4 h-4" />
-                        Modifier
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => remove(g)}
-                        className="gap-2 text-destructive focus:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Supprimer
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Formulaire Ajouter/Modifier */}
+        {/* Dialog edit */}
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <GameForm
-              game={editing as any}
-              onSave={handleSaveGame}
-              onCancel={() => {
-                setIsFormOpen(false);
-                setEditing(null);
-              }}
-              availableSagas={Array.from(
-                new Set(
-                  games
-                    .filter((x) => !(x as any).backlog)
-                    .map((x) => normalizeSaga(x.saga))
-                    .filter(Boolean) as string[]
-                )
-              ).sort()}
-            />
+            {editingGame && (
+              <GameForm
+                game={editingGame as any}
+                onSave={async (form) => {
+                  await updateGame(editingGame!.id, form as any);
+                  setIsFormOpen(false);
+                  setEditingGame(null);
+                  refresh();
+                }}
+                onCancel={() => {
+                  setIsFormOpen(false);
+                  setEditingGame(null);
+                }}
+                availableSagas={Array.from(
+                  new Set(
+                    games
+                      .map((g) => normalizeSaga(g.saga))
+                      .filter(Boolean) as string[]
+                  )
+                ).sort()}
+              />
+            )}
           </DialogContent>
         </Dialog>
       </div>
