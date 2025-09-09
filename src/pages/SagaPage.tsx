@@ -12,6 +12,11 @@ import { normalizeSaga, slugify } from "@/lib/slug";
 const SANS_SAGA_NAME = "JEUX";
 const SANS_SAGA_SLUG = "jeux";
 
+// Coercion identique à l'index
+function toBool(v: any): boolean {
+  return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
+}
+
 export default function SagaPage() {
   const params = useParams();
   const slug = (params.slug || "").toLowerCase();
@@ -31,31 +36,26 @@ export default function SagaPage() {
   // what saga name are we viewing?
   const sagaKey = useMemo<string>(() => {
     if (slug === SANS_SAGA_SLUG) return SANS_SAGA_NAME;
-    // reverse from slug -> display key (upper)
-    return (slug || "")
-      .split("-")
-      .join(" ")
-      .toUpperCase();
+    return (slug || "").split("-").join(" ").toUpperCase();
   }, [slug]);
 
-  // show only NON planned games of that saga
+  // show only NON planned games of that saga (robust)
   const items = useMemo(() => {
     return (games ?? []).filter((g) => {
       const group = normalizeSaga(g.saga) || SANS_SAGA_NAME; // undefined -> JEUX
       const sameSaga =
         (group === SANS_SAGA_NAME && sagaKey === SANS_SAGA_NAME) ||
         (group !== SANS_SAGA_NAME && slugify(group) === slug);
-      const notPlanned = !Boolean((g as any).isPlanned);
+      const notPlanned = !toBool((g as any).isPlanned);
       return sameSaga && notPlanned;
     });
   }, [games, slug, sagaKey]);
 
-  // create/update from dialog
   const handleSave = async (data: Omit<GameDTO, "id" | "createdAt" | "updatedAt">) => {
     const payload: any = {
       ...data,
       saga: data.saga ? normalizeSaga(data.saga) : undefined,
-      isPlanned: Boolean((data as any).isPlanned),
+      isPlanned: toBool((data as any).isPlanned),
     };
 
     if (editingGame?.id != null) {
