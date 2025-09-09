@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Gamepad2, Plus, MoreVertical, Upload, Download, ClipboardList } from "lucide-react";
+import { Gamepad2, Plus, MoreVertical, Upload, Download, FolderOpen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -39,11 +39,11 @@ export default function Index() {
     sortOrder: "desc",
   });
 
-  // ---- Chargement ----
+  // ---- Load ----
   async function refresh() {
     try {
       const data = await listGames();
-      setGames(data);
+      setGames(data ?? []);
     } catch (e: any) {
       toast({
         title: "Erreur de chargement",
@@ -56,39 +56,41 @@ export default function Index() {
     refresh();
   }, []);
 
-  const backlogCount = useMemo(
-    () => games.filter((g) => g.backlog === true).length,
-    [games]
-  );
-
-  // ---- Plateformes disponibles pour le filtre ----
+  // ---- Platforms for the filter ----
   const availablePlatforms = useMemo(() => {
     return Array.from(
       new Set(games.map((g) => g.platform).filter(Boolean) as string[])
     ).sort();
   }, [games]);
 
-  // ---- Filtrage par jeu (hors backlog) ----
+  // ---------------- Core derived datasets ----------------
+
+  // Count of planned games
+  const plannedCount = useMemo(
+    () => games.filter((g) => Boolean((g as any).isPlanned)).length,
+    [games]
+  );
+
+  // Collection = games that are NOT planned (À FAIRE)
+  const nonPlannedGames = useMemo(
+    () => games.filter((g) => !Boolean((g as any).isPlanned)),
+    [games]
+  );
+
+  // Filtered search dataset (only on non planned games)
   const matchingGames: GameDTO[] = useMemo(() => {
     const term = filters.search.trim().toLowerCase();
-    return games
-      .filter((g) => g.backlog !== true) // <= ne pas mélanger avec "À FAIRE"
-      .filter((game) => {
-        if (term && !game.title?.toLowerCase().includes(term)) return false;
-        if (
-          filters.genres.length > 0 &&
-          !filters.genres.some((g) => (game.genres || []).includes(g))
-        )
-          return false;
-        if ((game.rating ?? 0) < filters.minRating) return false;
-        if (filters.platform && game.platform !== filters.platform) return false;
-        return true;
-      });
-  }, [games, filters]);
+    return nonPlannedGames.filter((game) => {
+      if (term && !game.title?.toLowerCase().includes(term)) return false;
+      if (filters.genres.length > 0 && !filters.genres.some((g) => (game.genres || []).includes(g))) return false;
+      if ((game.rating ?? 0) < filters.minRating) return false;
+      if (filters.platform && game.platform !== filters.platform) return false;
+      return true;
+    });
+  }, [nonPlannedGames, filters]);
 
   const hasActiveSearch = filters.search.trim().length > 0;
 
-  // ---- Groupage (depuis la liste déjà filtrée) ----
   type SagaGroup = {
     name: string;
     slug: string;
@@ -97,9 +99,11 @@ export default function Index() {
     count: number;
   };
 
+  // Build groups (from filtered, non-planned list)
   const { jeuxGroup, sagaGroups } = useMemo(() => {
     const map = new Map<string, GameDTO[]>();
     for (const g of matchingGames) {
+      // normalize → undefined / "" → "JEUX"
       const key = normalizeSaga(g.saga) || SANS_SAGA_NAME;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(g);
@@ -109,6 +113,7 @@ export default function Index() {
     const sagas: SagaGroup[] = [];
 
     for (const [nameUpper, items] of map.entries()) {
+      // pick cover from sorted items (order then date)
       const sorted = [...items].sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -117,11 +122,11 @@ export default function Index() {
         const bc = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         return ac - bc;
       });
-      const cover = sorted[0]?.coverUrl;
-      const slug =
-        nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
 
+      const cover = sorted[0]?.coverUrl;
+      const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
       const group = { name: nameUpper, slug, items, cover, count: items.length };
+
       if (nameUpper === SANS_SAGA_NAME) jeuxGroup = group;
       else sagas.push(group);
     }
@@ -130,14 +135,15 @@ export default function Index() {
     return { jeuxGroup, sagaGroups: sagas };
   }, [matchingGames]);
 
-  // ---- Ajouter / Modifier ----
+  // ---- Create / update ----
   const handleSaveGame = async (
     gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
     try {
-      const payload = {
+      const payload: any = {
         ...gameData,
         saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
+        isPlanned: Boolean((gameData as any).isPlanned),
       };
 
       if (editingGame?.id != null) {
@@ -159,7 +165,7 @@ export default function Index() {
     }
   };
 
-  // ---- Export JSON ----
+  // ---- Export ----
   const handleExportAll = () => {
     try {
       const data = JSON.stringify(games, null, 2);
@@ -173,10 +179,7 @@ export default function Index() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast({
-        title: "Export JSON",
-        description: "La collection a été exportée.",
-      });
+      toast({ title: "Export JSON", description: "La collection a été exportée." });
     } catch (e: any) {
       toast({
         title: "Export échoué",
@@ -186,7 +189,7 @@ export default function Index() {
     }
   };
 
-  // ---- Import JSON ----
+  // ---- Import ----
   const handleImport = (file: File) => {
     const reader = new FileReader();
     reader.onload = async () => {
@@ -197,6 +200,7 @@ export default function Index() {
           await createGame({
             ...rest,
             saga: rest.saga ? normalizeSaga(rest.saga) : undefined,
+            isPlanned: Boolean((rest as any).isPlanned),
           });
         }
         toast({ title: "Import JSON", description: "Import terminé." });
@@ -226,11 +230,7 @@ export default function Index() {
                 Ma Collection
               </h1>
               <p className="text-sm sm:text-base text-muted-foreground">
-                {
-                  // Les jeux de la collection = tous - backlog
-                  games.filter((g) => g.backlog !== true).length
-                }{" "}
-                {games.filter((g) => g.backlog !== true).length > 1 ? "jeux" : "jeu"}
+                {games.length} {games.length > 1 ? "jeux" : "jeu"}
               </p>
             </div>
           </div>
@@ -282,7 +282,7 @@ export default function Index() {
           </div>
         </div>
 
-        {/* Barre de recherche */}
+        {/* Search + Filters */}
         <div className="mb-3 sm:mb-4">
           <SearchAndFilters
             filters={filters}
@@ -291,48 +291,36 @@ export default function Index() {
           />
         </div>
 
-        {/* === Bannières JEUX + À FAIRE === */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-          {/* JEUX */}
-          <Link
-            to={`/s/${SANS_SAGA_SLUG}`}
-            className="relative block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
-          >
-            <img
-              src="/banner_jeux_1600x450.jpg"
-              srcSet="/banner_jeux_1024x360.jpg 1024w, /banner_jeux_1600x450.jpg 1600w, /banner_jeux_1920x500.jpg 1920w"
-              sizes="(max-width: 1024px) 100vw, 50vw"
-              alt="Section JEUX"
-              className="absolute inset-0 h-full w-full object-cover"
-              style={{ objectPosition: "center 50%" }}
-            />
-            <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px]" />
-          </Link>
-
-          {/* À FAIRE */}
+        {/* ----- Link to TODO ----- */}
+        <div className="mb-2">
           <Link
             to="/todo"
-            className="relative block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
-            title="Jeux à faire"
+            className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+            title="Voir la liste À FAIRE"
           >
-            <img
-              src="/banner_todo_1600x450.jpg"
-              srcSet="/banner_todo_1024x360.jpg 1024w, /banner_todo_1600x450.jpg 1600w, /banner_todo_1920x500.jpg 1920w"
-              sizes="(max-width: 1024px) 100vw, 50vw"
-              alt="Section À FAIRE"
-              className="absolute inset-0 h-full w-full object-cover"
-              style={{ objectPosition: "center 50%" }}
-            />
-            {/* badge compteur en overlay discret */}
-            <div className="absolute top-3 right-3 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-white text-xs">
-              <ClipboardList className="w-4 h-4" />
-              <span>{backlogCount}</span>
-            </div>
-            <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px]" />
+            <FolderOpen className="w-4 h-4" />
+            Voir « À FAIRE » ({plannedCount})
           </Link>
         </div>
 
-        {/* ===== Résultats (cartes de jeux) si recherche ===== */}
+        {/* === JEUX banner (full-width) === */}
+        <Link
+          to={`/s/${SANS_SAGA_SLUG}`}
+          className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+        >
+          <img
+            src="/banner_jeux_1600x450.jpg"
+            srcSet="/banner_jeux_1024x360.jpg 1024w, /banner_jeux_1600x450.jpg 1600w, /banner_jeux_1920x500.jpg 1920w"
+            sizes="(max-width: 640px) 100vw, (max-width: 1280px) 90vw, 1200px"
+            alt="Section JEUX"
+            className="absolute inset-0 h-full w-full object-cover"
+            style={{ objectPosition: "center 50%" }}
+          />
+          {/* spacer to keep the height */}
+          <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px]" />
+        </Link>
+
+        {/* ===== Results when searching ===== */}
         {hasActiveSearch && (
           <>
             <h2 className="text-lg font-semibold mb-3">
@@ -345,8 +333,7 @@ export default function Index() {
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 mb-8">
                 {matchingGames.map((g) => {
                   const nameUpper = normalizeSaga(g.saga) || SANS_SAGA_NAME;
-                  const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
-                  const to = `/s/${slug}?q=${encodeURIComponent(filters.search.trim())}`;
+                  const to = `/s/${nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper)}`;
                   return (
                     <Link
                       key={g.id}
@@ -367,9 +354,7 @@ export default function Index() {
                       )}
                       <div className="p-3">
                         <div className="font-semibold leading-tight line-clamp-2">{g.title}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {nameUpper}
-                        </div>
+                        <div className="text-xs text-muted-foreground">{nameUpper}</div>
                       </div>
                     </Link>
                   );
@@ -379,7 +364,7 @@ export default function Index() {
           </>
         )}
 
-        {/* ===== Sagas ===== */}
+        {/* Sagas */}
         <h2 className="text-lg font-semibold mb-3">Sagas</h2>
         {sagaGroups.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">Aucune saga.</div>
@@ -388,7 +373,7 @@ export default function Index() {
             {sagaGroups.map((g) => (
               <Link
                 key={g.slug}
-                to={`/s/${g.slug}${hasActiveSearch ? `?q=${encodeURIComponent(filters.search.trim())}` : ""}`}
+                to={`/s/${g.slug}`}
                 className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
               >
                 {g.cover ? (
@@ -427,9 +412,7 @@ export default function Index() {
               }}
               availableSagas={Array.from(
                 new Set(
-                  games
-                    .map((g) => normalizeSaga(g.saga))
-                    .filter(Boolean) as string[]
+                  games.map((g) => normalizeSaga(g.saga)).filter(Boolean) as string[]
                 )
               ).sort()}
             />
