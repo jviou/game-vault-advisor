@@ -23,6 +23,11 @@ import { slugify, normalizeSaga } from "@/lib/slug";
 const SANS_SAGA_NAME = "JEUX";
 const SANS_SAGA_SLUG = "jeux";
 
+// --- Robust bool coercion for isPlanned (true/false/"true"/"false"/1/0) ---
+function toBool(v: any): boolean {
+  return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
+}
+
 export default function Index() {
   const { toast } = useToast();
 
@@ -65,15 +70,15 @@ export default function Index() {
 
   // ---------------- Core derived datasets ----------------
 
-  // Count of planned games
+  // Count of planned games (robust coercion)
   const plannedCount = useMemo(
-    () => games.filter((g) => Boolean((g as any).isPlanned)).length,
+    () => games.filter((g) => toBool((g as any).isPlanned)).length,
     [games]
   );
 
-  // Collection = games that are NOT planned (À FAIRE)
+  // Collection = NOT planned
   const nonPlannedGames = useMemo(
-    () => games.filter((g) => !Boolean((g as any).isPlanned)),
+    () => games.filter((g) => !toBool((g as any).isPlanned)),
     [games]
   );
 
@@ -103,7 +108,6 @@ export default function Index() {
   const { jeuxGroup, sagaGroups } = useMemo(() => {
     const map = new Map<string, GameDTO[]>();
     for (const g of matchingGames) {
-      // normalize → undefined / "" → "JEUX"
       const key = normalizeSaga(g.saga) || SANS_SAGA_NAME;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(g);
@@ -113,7 +117,6 @@ export default function Index() {
     const sagas: SagaGroup[] = [];
 
     for (const [nameUpper, items] of map.entries()) {
-      // pick cover from sorted items (order then date)
       const sorted = [...items].sort((a, b) => {
         const ao = a.order ?? Number.POSITIVE_INFINITY;
         const bo = b.order ?? Number.POSITIVE_INFINITY;
@@ -143,7 +146,7 @@ export default function Index() {
       const payload: any = {
         ...gameData,
         saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
-        isPlanned: Boolean((gameData as any).isPlanned),
+        isPlanned: toBool((gameData as any).isPlanned),
       };
 
       if (editingGame?.id != null) {
@@ -200,11 +203,11 @@ export default function Index() {
           await createGame({
             ...rest,
             saga: rest.saga ? normalizeSaga(rest.saga) : undefined,
-            isPlanned: Boolean((rest as any).isPlanned),
+            isPlanned: toBool((rest as any).isPlanned),
           });
         }
-        toast({ title: "Import JSON", description: "Import terminé." });
         refresh();
+        toast({ title: "Import JSON", description: "Import terminé." });
       } catch (e: any) {
         toast({
           title: "Import échoué",
@@ -303,7 +306,7 @@ export default function Index() {
           </Link>
         </div>
 
-        {/* === JEUX banner (full-width) === */}
+        {/* === JEUX banner === */}
         <Link
           to={`/s/${SANS_SAGA_SLUG}`}
           className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
@@ -316,7 +319,6 @@ export default function Index() {
             className="absolute inset-0 h-full w-full object-cover"
             style={{ objectPosition: "center 50%" }}
           />
-          {/* spacer to keep the height */}
           <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px]" />
         </Link>
 
