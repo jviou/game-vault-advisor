@@ -1,6 +1,6 @@
 // --- Service Worker (cache + auto-update) ---
 // ⬅️ Si tu veux invalider manuellement tout l'ancien cache, change juste ce nom.
-const CACHE_NAME = "game-vault-v4";
+const CACHE_NAME = "game-vault-v5";
 const OFFLINE_URLS = ["/", "/index.html"];
 
 // Permet à la page de dire “active-toi tout de suite”
@@ -11,7 +11,7 @@ self.addEventListener("message", (evt) => {
 // Pré-cache le minimum pour l’offline et passe direct en “waiting”
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(OFFLINE_URLS)).catch(() => {})
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(OFFLINE_URLS)).catch(() => { })
   );
 });
 
