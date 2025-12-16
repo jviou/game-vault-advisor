@@ -1,0 +1,30 @@
+services:
+  game-vault:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: game-vault
+    depends_on:
+      - json-db
+      - sgdb-proxy
+    ports:
+      - "8099:80"
+    restart: unless-stopped
+
+  json-db:
+    image: clue/json-server
+    container_name: game-vault-db
+    volumes:
+      - /opt/game-vault-data/db.json:/data/db.json
+    command: ["--host", "0.0.0.0", "/data/db.json"]
+    restart: unless-stopped
+
+  sgdb-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.sgdb
+    container_name: game-vault-sgdb
+    environment:
+      - SGDB_KEY=${SGDB_KEY}
+      - PORT=3000
+    restart: unless-stopped
