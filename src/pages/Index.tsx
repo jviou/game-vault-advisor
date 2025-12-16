@@ -15,7 +15,7 @@ import { SearchAndFilters, type Filters } from "@/components/SearchAndFilters";
 import { useToast } from "@/hooks/use-toast";
 
 import type { GameDTO } from "@/lib/api";
-import { listGames, createGame, updateGame } from "@/lib/api";
+import { listGames, createGame, updateGame, deleteGame } from "@/lib/api";
 import { GameForm } from "@/components/GameForm";
 import { GameDetails } from "@/components/GameDetails";
 
@@ -298,17 +298,28 @@ export default function Index() {
           />
         </div>
 
-        {/* ----- Link to TODO ----- */}
-        <div className="mb-2">
-          <Link
-            to="/todo"
-            className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
-            title="Voir la liste À FAIRE"
-          >
-            <FolderOpen className="w-4 h-4" />
-            Voir « À FAIRE » ({plannedCount})
-          </Link>
-        </div>
+        {/* ----- Link to TODO Banner ----- */}
+        <Link
+          to="/todo"
+          className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
+        >
+          <img
+            src="/banner_todo_1600x450.jpg"
+            alt="Section À FAIRE"
+            className="w-full h-auto object-cover"
+          />
+          {/* Optional Overlay Text */}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="text-center">
+              <h2 className="text-3xl sm:text-5xl font-extrabold text-white drop-shadow-md tracking-wider">
+                À FAIRE
+              </h2>
+              <p className="text-white/90 text-sm sm:text-lg font-medium bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm mx-auto w-fit mt-2">
+                {plannedCount} jeux
+              </p>
+            </div>
+          </div>
+        </Link>
 
         {/* === JEUX banner === */}
         <Link
@@ -432,6 +443,7 @@ export default function Index() {
           game={viewingGame}
           isOpen={isDetailsOpen}
           onClose={() => setIsDetailsOpen(false)}
+          onDelete={handleDeleteGame}
         />
 
         {/* FAB mobile */}

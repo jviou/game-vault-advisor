@@ -20,13 +20,14 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import type { GameDTO } from "@/lib/api";
-import { listGames, createGame, updateGame, reorderSaga } from "@/lib/api";
+import { listGames, createGame, updateGame, reorderSaga, deleteGame } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { GameForm } from "@/components/GameForm";
 import GameCard from "@/components/GameCard";
 import { GameDetails } from "@/components/GameDetails";
 import { normalizeSaga, slugify } from "@/lib/slug";
+import { useToast } from "@/hooks/use-toast";
 
 const SANS_SAGA_NAME = "JEUX";
 const SANS_SAGA_SLUG = "jeux";
@@ -71,6 +72,7 @@ function SortableGameItem({
 export default function SagaPage() {
   const params = useParams();
   const slug = (params.slug || "").toLowerCase();
+  const { toast } = useToast();
 
   const [games, setGames] = useState<GameDTO[]>([]);
 
@@ -146,6 +148,20 @@ export default function SagaPage() {
     setIsFormOpen(false);
     setEditingGame(null);
     await refresh();
+  };
+
+  const handleDeleteGame = async (game: GameDTO) => {
+    try {
+      await deleteGame(game.id);
+      toast({ title: "Jeu supprimé" });
+      await refresh();
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e?.message || "Impossible de supprimer.",
+        variant: "destructive",
+      });
+    }
   };
 
   // -- DnD --
@@ -268,6 +284,7 @@ export default function SagaPage() {
           game={viewingGame}
           isOpen={isDetailsOpen}
           onClose={() => setIsDetailsOpen(false)}
+          onDelete={handleDeleteGame}
         />
       </div>
     </div>
