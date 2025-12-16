@@ -73,7 +73,12 @@ export default function TodoPage() {
             </Button>
             <div>
               <h1 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">À FAIRE</h1>
-              <p className="text-muted-foreground text-sm">{games.length} jeu{games.length > 1 ? "x" : ""}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-xs font-bold border border-primary/20">
+                  {games.length}
+                </span>
+                <span className="text-muted-foreground text-sm">jeu{games.length > 1 ? "x" : ""} en attente</span>
+              </div>
             </div>
           </div>
         </div>
