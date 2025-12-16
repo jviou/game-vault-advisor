@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { GameDTO } from "@/lib/api";
 import { listGames, createGame, updateGame } from "@/lib/api";
 import { GameForm } from "@/components/GameForm";
+import { GameDetails } from "@/components/GameDetails";
 
 import { slugify, normalizeSaga } from "@/lib/slug";
 
@@ -34,6 +35,9 @@ export default function Index() {
   const [games, setGames] = useState<GameDTO[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
+
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [viewingGame, setViewingGame] = useState<GameDTO | null>(null);
 
   const [filters, setFilters] = useState<Filters>({
     search: "",
@@ -335,12 +339,14 @@ export default function Index() {
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 mb-8">
                 {matchingGames.map((g) => {
                   const nameUpper = normalizeSaga(g.saga) || SANS_SAGA_NAME;
-                  const to = `/s/${nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper)}`;
                   return (
-                    <Link
+                    <div
                       key={g.id}
-                      to={to}
-                      className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block"
+                      onClick={() => {
+                        setViewingGame(g);
+                        setIsDetailsOpen(true);
+                      }}
+                      className="group rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card hover:shadow-card-hover transition block cursor-pointer"
                     >
                       {g.coverUrl ? (
                         <img
@@ -358,7 +364,7 @@ export default function Index() {
                         <div className="font-semibold leading-tight line-clamp-2">{g.title}</div>
                         <div className="text-xs text-muted-foreground">{nameUpper}</div>
                       </div>
-                    </Link>
+                    </div>
                   );
                 })}
               </div>
@@ -421,6 +427,13 @@ export default function Index() {
           </DialogContent>
         </Dialog>
 
+        {/* DETAILS POPUP */}
+        <GameDetails
+          game={viewingGame}
+          isOpen={isDetailsOpen}
+          onClose={() => setIsDetailsOpen(false)}
+        />
+
         {/* FAB mobile */}
         <Button
           className="fixed sm:hidden bottom-4 right-4 rounded-full h-12 w-12 shadow-glow-primary"
@@ -436,3 +449,4 @@ export default function Index() {
     </div>
   );
 }
+
