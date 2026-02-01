@@ -201,21 +201,79 @@ export default function Index() {
     const reader = new FileReader();
     reader.onload = async () => {
       try {
-        const payload = JSON.parse(String(reader.result)) as GameDTO[];
+        console.log("🔍 [IMPORT] Début de l'import du fichier:", file.name);
+        const rawData = String(reader.result);
+        console.log("📄 [IMPORT] Taille du fichier:", rawData.length, "caractères");
+        
+        const parsed = JSON.parse(rawData);
+        console.log("✅ [IMPORT] JSON parsé avec succès. Type:", Array.isArray(parsed) ? "Array" : typeof parsed);
+        
+        // Support pour différents formats JSON
+        let payload: GameDTO[];
+        if (Array.isArray(parsed)) {
+          // Format: tableau direct de jeux
+          payload = parsed;
+          console.log("📦 [IMPORT] Format détecté: Array de", payload.length, "jeux");
+        } else if (parsed.games && Array.isArray(parsed.games)) {
+          // Format: objet avec propriété "games"
+          payload = parsed.games;
+          console.log("📦 [IMPORT] Format détecté: Object.games avec", payload.length, "jeux");
+        } else {
+          throw new Error("Format JSON non supporté. Attendu: Array ou {games: Array}");
+        }
+
+        if (payload.length === 0) {
+          console.warn("⚠️ [IMPORT] Aucun jeu à importer");
+          toast({
+            title: "Import vide",
+            description: "Le fichier JSON ne contient aucun jeu.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        console.log("🚀 [IMPORT] Importation de", payload.length, "jeux...");
+        let successCount = 0;
+        let errorCount = 0;
+
         for (const g of payload) {
-          const { id, createdAt, updatedAt, ...rest } = g as any;
-          await createGame({
-            ...rest,
-            saga: rest.saga ? normalizeSaga(rest.saga) : undefined,
-            isPlanned: toBool((rest as any).isPlanned),
+          try {
+            const { id, createdAt, updatedAt, ...rest } = g as any;
+            console.log(`  ➡️ Import: "${rest.title || 'Sans titre'}"`);
+            
+            await createGame({
+              ...rest,
+              saga: rest.saga ? normalizeSaga(rest.saga) : undefined,
+              isPlanned: toBool((rest as any).isPlanned),
+            });
+            successCount++;
+          } catch (err: any) {
+            console.error(`  ❌ Erreur pour "${g.title}":`, err.message);
+            errorCount++;
+          }
+        }
+
+        console.log(`✨ [IMPORT] Terminé: ${successCount} réussis, ${errorCount} échoués`);
+        
+        refresh();
+        
+        if (errorCount > 0) {
+          toast({
+            title: "Import partiel",
+            description: `${successCount} jeux importés, ${errorCount} erreurs. Voir la console (F12).`,
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Import réussi",
+            description: `${successCount} jeux importés avec succès.`,
           });
         }
-        refresh();
-        toast({ title: "Import JSON", description: "Import terminé." });
       } catch (e: any) {
+        console.error("❌ [IMPORT] Erreur fatale:", e);
         toast({
           title: "Import échoué",
-          description: e?.message || "Le fichier n’est pas valide.",
+          description: e?.message || "Le fichier n'est pas valide.",
           variant: "destructive",
         });
       }

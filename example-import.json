@@ -1,0 +1,71 @@
+[
+    {
+        "id": 1,
+        "title": "The Legend of Zelda: Breath of the Wild",
+        "coverUrl": "https://example.com/cover1.jpg",
+        "rating": 5,
+        "genres": [
+            "Action",
+            "Adventure",
+            "RPG"
+        ],
+        "whyLiked": "Open world magistral, liberté totale",
+        "platform": "Switch",
+        "saga": "ZELDA",
+        "order": 1,
+        "isPlanned": false,
+        "finishedAt": "2023-08-15",
+        "createdAt": "2023-08-10T10:00:00.000Z",
+        "updatedAt": "2023-08-15T15:30:00.000Z"
+    },
+    {
+        "id": 2,
+        "title": "The Legend of Zelda: Tears of the Kingdom",
+        "coverUrl": "https://example.com/cover2.jpg",
+        "rating": 5,
+        "genres": [
+            "Action",
+            "Adventure",
+            "RPG"
+        ],
+        "whyLiked": "Encore meilleur que le premier",
+        "platform": "Switch",
+        "saga": "ZELDA",
+        "order": 2,
+        "isPlanned": false,
+        "finishedAt": "2023-08-20",
+        "createdAt": "2023-08-16T10:00:00.000Z",
+        "updatedAt": "2023-08-20T18:45:00.000Z"
+    },
+    {
+        "id": 3,
+        "title": "Elden Ring",
+        "coverUrl": "https://example.com/cover3.jpg",
+        "rating": 4,
+        "genres": [
+            "RPG",
+            "Souls-like"
+        ],
+        "whyLiked": "Difficile mais gratifiant",
+        "platform": "PC",
+        "isPlanned": false,
+        "finishedAt": "2023-07-10",
+        "createdAt": "2023-06-01T10:00:00.000Z",
+        "updatedAt": "2023-07-10T22:15:00.000Z"
+    },
+    {
+        "id": 4,
+        "title": "Hollow Knight",
+        "coverUrl": "https://example.com/cover4.jpg",
+        "rating": 5,
+        "genres": [
+            "Metroidvania",
+            "Platformer"
+        ],
+        "whyLiked": "Atmosphère incroyable",
+        "platform": "PC",
+        "isPlanned": true,
+        "createdAt": "2023-08-22T10:00:00.000Z",
+        "updatedAt": "2023-08-22T10:00:00.000Z"
+    }
+]
