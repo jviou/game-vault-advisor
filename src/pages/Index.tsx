@@ -172,6 +172,23 @@ export default function Index() {
     }
   };
 
+  // ---- Delete ----
+  const handleDeleteGame = async (game: GameDTO) => {
+    try {
+      await deleteGame(game.id);
+      toast({ title: "Jeu supprimé" });
+      setIsDetailsOpen(false);
+      setViewingGame(null);
+      await refresh();
+    } catch (e: any) {
+      toast({
+        title: "Erreur",
+        description: e?.message || "Impossible de supprimer.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // ---- Export ----
   const handleExportAll = () => {
     try {
@@ -204,10 +221,10 @@ export default function Index() {
         console.log("🔍 [IMPORT] Début de l'import du fichier:", file.name);
         const rawData = String(reader.result);
         console.log("📄 [IMPORT] Taille du fichier:", rawData.length, "caractères");
-        
+
         const parsed = JSON.parse(rawData);
         console.log("✅ [IMPORT] JSON parsé avec succès. Type:", Array.isArray(parsed) ? "Array" : typeof parsed);
-        
+
         // Support pour différents formats JSON
         let payload: GameDTO[];
         if (Array.isArray(parsed)) {
@@ -240,7 +257,7 @@ export default function Index() {
           try {
             const { id, createdAt, updatedAt, ...rest } = g as any;
             console.log(`  ➡️ Import: "${rest.title || 'Sans titre'}"`);
-            
+
             await createGame({
               ...rest,
               saga: rest.saga ? normalizeSaga(rest.saga) : undefined,
@@ -254,9 +271,9 @@ export default function Index() {
         }
 
         console.log(`✨ [IMPORT] Terminé: ${successCount} réussis, ${errorCount} échoués`);
-        
+
         refresh();
-        
+
         if (errorCount > 0) {
           toast({
             title: "Import partiel",
