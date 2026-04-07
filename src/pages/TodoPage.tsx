@@ -1,5 +1,5 @@
 // src/pages/TodoPage.tsx
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, MoreVertical, Pencil, Trash2, CheckCircle2 } from "lucide-react";
 
@@ -25,40 +25,40 @@ export default function TodoPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       const data = await listGames();
-      setGames(data.filter((g: any) => g.backlog === true));
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e?.message || "Impossible de charger la liste À FAIRE.",
-        variant: "destructive",
-      });
+      setGames(data.filter((g) => g.backlog === true));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Impossible de charger la liste À FAIRE.";
+      toast({ title: "Erreur", description: message, variant: "destructive" });
     }
-  }
+  }, [toast]);
+
   useEffect(() => {
     refresh();
-  }, []);
+  }, [refresh]);
 
   const removeFromBacklog = async (g: GameDTO) => {
     try {
-      await updateGame(g.id, { ...(g as any), backlog: false } as any);
+      await updateGame(g.id, { ...g, backlog: false });
       toast({ title: "Retiré de À FAIRE", description: g.title });
-      refresh();
-    } catch (e: any) {
-      toast({ title: "Échec", description: e?.message || "Impossible de modifier.", variant: "destructive" });
+      await refresh();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Impossible de modifier.";
+      toast({ title: "Échec", description: message, variant: "destructive" });
     }
   };
 
   const handleDelete = async (g: GameDTO) => {
-    if (!confirm(`Supprimer “${g.title}” ?`)) return;
+    if (!confirm(`Supprimer "${g.title}" ?`)) return;
     try {
       await deleteGame(g.id);
       toast({ title: "Jeu supprimé", variant: "destructive" });
-      refresh();
-    } catch (e: any) {
-      toast({ title: "Échec", description: e?.message || "Impossible de supprimer.", variant: "destructive" });
+      await refresh();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Impossible de supprimer.";
+      toast({ title: "Échec", description: message, variant: "destructive" });
     }
   };
 
@@ -89,7 +89,6 @@ export default function TodoPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
             {games.map((g) => (
               <div key={g.id} className="group relative rounded-xl overflow-hidden border border-border bg-gradient-card shadow-card">
-                {/* ⋯ menu */}
                 <div className="absolute top-2 right-2 z-10" onClick={(e) => e.stopPropagation()}>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -139,13 +138,13 @@ export default function TodoPage() {
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             {editingGame && (
               <GameForm
-                game={editingGame as any}
+                game={editingGame}
                 onSave={async (form) => {
-                  // IMPORTANT : on conserve/force backlog=true pour rester dans la page
-                  await updateGame(editingGame!.id, { ...(form as any), backlog: true } as any);
+                  // Conserver backlog=true pour rester dans la page
+                  await updateGame(editingGame.id, { ...form, backlog: true });
                   setIsFormOpen(false);
                   setEditingGame(null);
-                  refresh();
+                  await refresh();
                 }}
                 onCancel={() => { setIsFormOpen(false); setEditingGame(null); }}
                 availableSagas={[]}

@@ -1,21 +1,6 @@
 // src/types/game.ts
-
-export type Game = {
-  id?: number;
-  title: string;
-  coverUrl?: string;
-  rating: number;
-  genres: string[];
-  whyLiked?: string;
-  platform?: string;
-
-  // NEW: regrouper par saga (ex: "Dragon Quest", "Zelda")
-  saga?: string;
-
-  finishedAt?: string;     // garde si encore utilisé dans ton projet
-  createdAt?: string;
-  updatedAt?: string;
-};
+// Re-export GameDTO as Game for backward compatibility with components using the Game type
+export type { GameDTO as Game } from "@/lib/api";
 
 export const DEFAULT_GENRES = [
   "JRPG",

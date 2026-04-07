@@ -1,7 +1,6 @@
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
@@ -105,9 +104,19 @@ export function GameDetails({ game, isOpen, onClose, onDelete }: GameDetailsProp
                   <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
                   Note
                 </h3>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold tabular-nums text-foreground">{game.rating}</span>
-                  <span className="text-muted-foreground">/ 10</span>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <Star
+                      key={i}
+                      className={`w-6 h-6 ${
+                        i < game.rating
+                          ? "fill-yellow-500 text-yellow-500"
+                          : "text-muted-foreground/30"
+                      }`}
+                    />
+                  ))}
+                  <span className="ml-2 text-xl font-bold tabular-nums text-foreground">{game.rating}</span>
+                  <span className="text-muted-foreground text-sm">/ 5</span>
                 </div>
               </div>
 

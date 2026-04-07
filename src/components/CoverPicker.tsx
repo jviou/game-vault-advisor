@@ -60,8 +60,8 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
         if (onTitlePick) onTitlePick(data[0].name);
         void pickGame(data[0].id);
       }
-    } catch (e: any) {
-      setError(e?.message || "Recherche impossible");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Recherche impossible");
     } finally {
       setLoading(false);
     }
@@ -77,8 +77,8 @@ export const CoverPicker: React.FC<CoverPickerProps> = ({
       const json = await res.json();
       const data: SgdbGrid[] = json?.data ?? [];
       setGrids(data);
-    } catch (e: any) {
-      setError(e?.message || "Chargement des jaquettes impossible");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Chargement des jaquettes impossible");
     }
   };
 

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Gamepad2, Plus, MoreVertical, Upload, Download, FolderOpen } from "lucide-react";
+import { Gamepad2, Plus, MoreVertical, Upload, Download } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -24,11 +24,6 @@ import { slugify, normalizeSaga } from "@/lib/slug";
 const SANS_SAGA_NAME = "JEUX";
 const SANS_SAGA_SLUG = "jeux";
 
-// --- Robust bool coercion for isPlanned (true/false/"true"/"false"/1/0) ---
-function toBool(v: any): boolean {
-  return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
-}
-
 export default function Index() {
   const { toast } = useToast();
 
@@ -49,21 +44,23 @@ export default function Index() {
   });
 
   // ---- Load ----
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       const data = await listGames();
       setGames(data ?? []);
-    } catch (e: any) {
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Impossible de charger la collection.";
       toast({
         title: "Erreur de chargement",
-        description: e?.message || "Impossible de charger la collection.",
+        description: message,
         variant: "destructive",
       });
     }
-  }
+  }, [toast]);
+
   useEffect(() => {
     refresh();
-  }, []);
+  }, [refresh]);
 
   // ---- Platforms for the filter ----
   const availablePlatforms = useMemo(() => {
@@ -72,31 +69,29 @@ export default function Index() {
     ).sort();
   }, [games]);
 
-  // ---------------- Core derived datasets ----------------
-
-  // Count of planned games (robust coercion)
-  const plannedCount = useMemo(
-    () => games.filter((g) => toBool((g as any).isPlanned)).length,
+  // Count of backlog games
+  const backlogCount = useMemo(
+    () => games.filter((g) => g.backlog === true).length,
     [games]
   );
 
-  // Collection = NOT planned
-  const nonPlannedGames = useMemo(
-    () => games.filter((g) => !toBool((g as any).isPlanned)),
+  // Collection = NOT backlog
+  const nonBacklogGames = useMemo(
+    () => games.filter((g) => g.backlog !== true),
     [games]
   );
 
-  // Filtered search dataset (only on non planned games)
+  // Filtered search dataset (only on non-backlog games)
   const matchingGames: GameDTO[] = useMemo(() => {
     const term = filters.search.trim().toLowerCase();
-    return nonPlannedGames.filter((game) => {
+    return nonBacklogGames.filter((game) => {
       if (term && !game.title?.toLowerCase().includes(term)) return false;
       if (filters.genres.length > 0 && !filters.genres.some((g) => (game.genres || []).includes(g))) return false;
       if ((game.rating ?? 0) < filters.minRating) return false;
       if (filters.platform && game.platform !== filters.platform) return false;
       return true;
     });
-  }, [nonPlannedGames, filters]);
+  }, [nonBacklogGames, filters]);
 
   const hasActiveSearch = filters.search.trim().length > 0;
 
@@ -108,8 +103,8 @@ export default function Index() {
     count: number;
   };
 
-  // Build groups (from filtered, non-planned list)
-  const { jeuxGroup, sagaGroups } = useMemo(() => {
+  // Build saga groups from filtered non-backlog games
+  const { sagaGroups } = useMemo(() => {
     const map = new Map<string, GameDTO[]>();
     for (const g of matchingGames) {
       const key = normalizeSaga(g.saga) || SANS_SAGA_NAME;
@@ -117,7 +112,6 @@ export default function Index() {
       map.get(key)!.push(g);
     }
 
-    let jeuxGroup: SagaGroup | null = null;
     const sagas: SagaGroup[] = [];
 
     for (const [nameUpper, items] of map.entries()) {
@@ -132,14 +126,12 @@ export default function Index() {
 
       const cover = sorted[0]?.coverUrl;
       const slug = nameUpper === SANS_SAGA_NAME ? SANS_SAGA_SLUG : slugify(nameUpper);
-      const group = { name: nameUpper, slug, items, cover, count: items.length };
-
-      if (nameUpper === SANS_SAGA_NAME) jeuxGroup = group;
-      else sagas.push(group);
+      const group: SagaGroup = { name: nameUpper, slug, items, cover, count: items.length };
+      sagas.push(group);
     }
 
     sagas.sort((a, b) => a.name.localeCompare(b.name));
-    return { jeuxGroup, sagaGroups: sagas };
+    return { sagaGroups: sagas };
   }, [matchingGames]);
 
   // ---- Create / update ----
@@ -147,10 +139,9 @@ export default function Index() {
     gameData: Omit<GameDTO, "id" | "createdAt" | "updatedAt">
   ) => {
     try {
-      const payload: any = {
+      const payload = {
         ...gameData,
         saga: gameData.saga ? normalizeSaga(gameData.saga) : undefined,
-        isPlanned: toBool((gameData as any).isPlanned),
       };
 
       if (editingGame?.id != null) {
@@ -163,12 +154,9 @@ export default function Index() {
       setIsFormOpen(false);
       setEditingGame(null);
       await refresh();
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e?.message || "Échec de l’enregistrement.",
-        variant: "destructive",
-      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Échec de l'enregistrement.";
+      toast({ title: "Erreur", description: message, variant: "destructive" });
     }
   };
 
@@ -180,12 +168,9 @@ export default function Index() {
       setIsDetailsOpen(false);
       setViewingGame(null);
       await refresh();
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e?.message || "Impossible de supprimer.",
-        variant: "destructive",
-      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Impossible de supprimer.";
+      toast({ title: "Erreur", description: message, variant: "destructive" });
     }
   };
 
@@ -204,12 +189,9 @@ export default function Index() {
       a.remove();
       URL.revokeObjectURL(url);
       toast({ title: "Export JSON", description: "La collection a été exportée." });
-    } catch (e: any) {
-      toast({
-        title: "Export échoué",
-        description: e?.message || "Impossible d’exporter le JSON.",
-        variant: "destructive",
-      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Impossible d'exporter le JSON.";
+      toast({ title: "Export échoué", description: message, variant: "destructive" });
     }
   };
 
@@ -218,29 +200,27 @@ export default function Index() {
     const reader = new FileReader();
     reader.onload = async () => {
       try {
-        console.log("🔍 [IMPORT] Début de l'import du fichier:", file.name);
+        console.log("[IMPORT] Début de l'import du fichier:", file.name);
         const rawData = String(reader.result);
-        console.log("📄 [IMPORT] Taille du fichier:", rawData.length, "caractères");
+        const parsed: unknown = JSON.parse(rawData);
 
-        const parsed = JSON.parse(rawData);
-        console.log("✅ [IMPORT] JSON parsé avec succès. Type:", Array.isArray(parsed) ? "Array" : typeof parsed);
-
-        // Support pour différents formats JSON
         let payload: GameDTO[];
         if (Array.isArray(parsed)) {
-          // Format: tableau direct de jeux
-          payload = parsed;
-          console.log("📦 [IMPORT] Format détecté: Array de", payload.length, "jeux");
-        } else if (parsed.games && Array.isArray(parsed.games)) {
-          // Format: objet avec propriété "games"
-          payload = parsed.games;
-          console.log("📦 [IMPORT] Format détecté: Object.games avec", payload.length, "jeux");
+          payload = parsed as GameDTO[];
+          console.log("[IMPORT] Format Array de", payload.length, "jeux");
+        } else if (
+          parsed !== null &&
+          typeof parsed === "object" &&
+          "games" in parsed &&
+          Array.isArray((parsed as Record<string, unknown>).games)
+        ) {
+          payload = (parsed as { games: GameDTO[] }).games;
+          console.log("[IMPORT] Format Object.games de", payload.length, "jeux");
         } else {
           throw new Error("Format JSON non supporté. Attendu: Array ou {games: Array}");
         }
 
         if (payload.length === 0) {
-          console.warn("⚠️ [IMPORT] Aucun jeu à importer");
           toast({
             title: "Import vide",
             description: "Le fichier JSON ne contient aucun jeu.",
@@ -249,30 +229,24 @@ export default function Index() {
           return;
         }
 
-        console.log("🚀 [IMPORT] Importation de", payload.length, "jeux...");
         let successCount = 0;
         let errorCount = 0;
 
         for (const g of payload) {
           try {
-            const { id, createdAt, updatedAt, ...rest } = g as any;
-            console.log(`  ➡️ Import: "${rest.title || 'Sans titre'}"`);
-
+            const { id: _id, createdAt: _ca, updatedAt: _ua, ...rest } = g;
             await createGame({
               ...rest,
               saga: rest.saga ? normalizeSaga(rest.saga) : undefined,
-              isPlanned: toBool((rest as any).isPlanned),
             });
             successCount++;
-          } catch (err: any) {
-            console.error(`  ❌ Erreur pour "${g.title}":`, err.message);
+          } catch (err) {
+            console.error(`Erreur pour "${g.title}":`, err instanceof Error ? err.message : err);
             errorCount++;
           }
         }
 
-        console.log(`✨ [IMPORT] Terminé: ${successCount} réussis, ${errorCount} échoués`);
-
-        refresh();
+        await refresh();
 
         if (errorCount > 0) {
           toast({
@@ -286,13 +260,10 @@ export default function Index() {
             description: `${successCount} jeux importés avec succès.`,
           });
         }
-      } catch (e: any) {
-        console.error("❌ [IMPORT] Erreur fatale:", e);
-        toast({
-          title: "Import échoué",
-          description: e?.message || "Le fichier n'est pas valide.",
-          variant: "destructive",
-        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Le fichier n'est pas valide.";
+        console.error("[IMPORT] Erreur fatale:", e);
+        toast({ title: "Import échoué", description: message, variant: "destructive" });
       }
     };
     reader.readAsText(file);
@@ -317,7 +288,6 @@ export default function Index() {
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -373,7 +343,7 @@ export default function Index() {
           />
         </div>
 
-        {/* ----- Link to TODO Banner ----- */}
+        {/* Banner À FAIRE */}
         <Link
           to="/todo"
           className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
@@ -383,20 +353,19 @@ export default function Index() {
             alt="Section À FAIRE"
             className="w-full h-auto object-cover"
           />
-          {/* Optional Overlay Text */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center">
               <h2 className="text-3xl sm:text-5xl font-extrabold text-white drop-shadow-md tracking-wider">
                 À FAIRE
               </h2>
               <p className="text-white/90 text-sm sm:text-lg font-medium bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm mx-auto w-fit mt-2">
-                {plannedCount} jeux
+                {backlogCount} jeux
               </p>
             </div>
           </div>
         </Link>
 
-        {/* === JEUX banner === */}
+        {/* Banner JEUX */}
         <Link
           to={`/s/${SANS_SAGA_SLUG}`}
           className="relative mb-8 block w-full overflow-hidden rounded-2xl border border-border bg-gradient-card shadow-card transition hover:shadow-card-hover"
@@ -412,7 +381,7 @@ export default function Index() {
           <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px]" />
         </Link>
 
-        {/* ===== Results when searching ===== */}
+        {/* Résultats de recherche */}
         {hasActiveSearch && (
           <>
             <h2 className="text-lg font-semibold mb-3">
@@ -498,7 +467,7 @@ export default function Index() {
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <GameForm
-              game={editingGame as any}
+              game={editingGame}
               onSave={handleSaveGame}
               onCancel={() => {
                 setIsFormOpen(false);
@@ -513,7 +482,7 @@ export default function Index() {
           </DialogContent>
         </Dialog>
 
-        {/* DETAILS POPUP */}
+        {/* Détails popup */}
         <GameDetails
           game={viewingGame}
           isOpen={isDetailsOpen}
@@ -536,4 +505,3 @@ export default function Index() {
     </div>
   );
 }
-

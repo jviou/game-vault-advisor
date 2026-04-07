@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Plus } from "lucide-react";
 import {
@@ -31,11 +31,6 @@ import { useToast } from "@/hooks/use-toast";
 
 const SANS_SAGA_NAME = "JEUX";
 const SANS_SAGA_SLUG = "jeux";
-
-// Robust coercion
-function toBool(v: any): boolean {
-  return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
-}
 
 // --- Sortable Item Wrapper ---
 function SortableGameItem({
@@ -76,7 +71,6 @@ export default function SagaPage() {
 
   const [games, setGames] = useState<GameDTO[]>([]);
 
-  // Dialogs state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameDTO | null>(null);
 
@@ -86,46 +80,42 @@ export default function SagaPage() {
   // DnD Sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      // Require movement to start drag (allows simple click)
-      activationConstraint: { distance: 8 }
+      activationConstraint: { distance: 8 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     const data = await listGames();
     setGames(data ?? []);
-  }
+  }, []);
 
   useEffect(() => {
     refresh();
-  }, []);
+  }, [refresh]);
 
-  // Compute View params
   const sagaKey = useMemo<string>(() => {
     if (slug === SANS_SAGA_SLUG) return SANS_SAGA_NAME;
     return (slug || "").split("-").join(" ").toUpperCase();
   }, [slug]);
 
-  // Filter games for THIS saga
+  // Filter games for THIS saga (exclude backlog)
   const items = useMemo(() => {
     const relevant = (games ?? []).filter((g) => {
       const group = normalizeSaga(g.saga) || SANS_SAGA_NAME;
       const sameSaga =
         (group === SANS_SAGA_NAME && sagaKey === SANS_SAGA_NAME) ||
         (group !== SANS_SAGA_NAME && slugify(group) === slug);
-      const notPlanned = !toBool((g as any).isPlanned);
-      return sameSaga && notPlanned;
+      const notBacklog = g.backlog !== true;
+      return sameSaga && notBacklog;
     });
 
-    // Locally sort by `order`, then `createdAt`
     return relevant.sort((a, b) => {
       const ao = a.order ?? Number.POSITIVE_INFINITY;
       const bo = b.order ?? Number.POSITIVE_INFINITY;
       if (ao !== bo) return ao - bo;
-      // Fallback
       const ac = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const bc = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return ac - bc;
@@ -134,10 +124,9 @@ export default function SagaPage() {
 
   // -- CRUD --
   const handleSave = async (data: Omit<GameDTO, "id" | "createdAt" | "updatedAt">) => {
-    const payload: any = {
+    const payload = {
       ...data,
       saga: data.saga ? normalizeSaga(data.saga) : undefined,
-      isPlanned: toBool((data as any).isPlanned),
     };
 
     if (editingGame?.id != null) {
@@ -155,12 +144,9 @@ export default function SagaPage() {
       await deleteGame(game.id);
       toast({ title: "Jeu supprimé" });
       await refresh();
-    } catch (e: any) {
-      toast({
-        title: "Erreur",
-        description: e?.message || "Impossible de supprimer.",
-        variant: "destructive",
-      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Impossible de supprimer.";
+      toast({ title: "Erreur", description: message, variant: "destructive" });
     }
   };
 
@@ -169,34 +155,21 @@ export default function SagaPage() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    // Optimistic update
     const oldIndex = items.findIndex((g) => g.id === active.id);
     const newIndex = items.findIndex((g) => g.id === over.id);
 
-    // New sorted array
     const newSorted = arrayMove(items, oldIndex, newIndex);
+    const otherGames = games.filter((g) => !items.includes(g));
 
-    // We update the GLOBAL list to reflect this change
-    // We must find the other games (not in this list) and keep them
-    const otherGames = games.filter(g => !items.includes(g));
-
-    // We need to apply the new indices as 'order' property to the items
-    // NOTE: assuming order starts at 0 or existing min
     const updates: { id: number; order: number }[] = [];
-
     const reorderedItems = newSorted.map((g, idx) => {
-      const newOrder = idx; // 0-based for this saga
-      updates.push({ id: g.id, order: newOrder });
-      return { ...g, order: newOrder };
+      updates.push({ id: g.id, order: idx });
+      return { ...g, order: idx };
     });
 
     setGames([...otherGames, ...reorderedItems]);
-
-    // Async save
     await reorderSaga(updates);
   };
-
-  const title = sagaKey;
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -207,7 +180,7 @@ export default function SagaPage() {
               ← Retour
             </Link>
             <h1 className="mt-1 text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent uppercase">
-              {title}
+              {sagaKey}
             </h1>
             <p className="text-sm text-muted-foreground">
               {items.length} {items.length > 1 ? "jeux" : "jeu"}
@@ -264,7 +237,7 @@ export default function SagaPage() {
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <GameForm
-              game={editingGame as any}
+              game={editingGame}
               onSave={handleSave}
               onCancel={() => {
                 setIsFormOpen(false);
@@ -279,7 +252,7 @@ export default function SagaPage() {
           </DialogContent>
         </Dialog>
 
-        {/* DETAILS POPUP */}
+        {/* Détails popup */}
         <GameDetails
           game={viewingGame}
           isOpen={isDetailsOpen}
@@ -290,4 +263,3 @@ export default function SagaPage() {
     </div>
   );
 }
-

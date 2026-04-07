@@ -43,7 +43,7 @@ function promptUpdate(reg: ServiceWorkerRegistration) {
 
   // Quand il passe "activated", on recharge la page pour charger les nouveaux assets
   const listen = () => {
-    if (reg.waiting && (reg as any).waiting.state !== 'activated') return;
+    if (reg.waiting && (reg.waiting as ServiceWorker).state !== 'activated') return;
     window.location.reload();
   };
 

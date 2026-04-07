@@ -201,7 +201,7 @@ export const SearchAndFilters = ({
                   <label className="text-sm font-medium">Trier par</label>
                   <Select
                     value={filters.sortBy}
-                    onValueChange={(value: any) => updateFilters({ sortBy: value })}
+                    onValueChange={(value) => updateFilters({ sortBy: value as Filters["sortBy"] })}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -219,7 +219,7 @@ export const SearchAndFilters = ({
                   <label className="text-sm font-medium">Ordre</label>
                   <Select
                     value={filters.sortOrder}
-                    onValueChange={(value: any) => updateFilters({ sortOrder: value })}
+                    onValueChange={(value) => updateFilters({ sortOrder: value as Filters["sortOrder"] })}
                   >
                     <SelectTrigger>
                       <SelectValue />

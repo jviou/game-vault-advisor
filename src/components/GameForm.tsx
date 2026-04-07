@@ -7,12 +7,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { Game, DEFAULT_GENRES } from "@/types/game";
+import type { GameDTO } from "@/lib/api";
+import { DEFAULT_GENRES } from "@/types/game";
 import { CoverPicker } from "@/components/CoverPicker";
 
 interface GameFormProps {
-  game?: Game | null;
-  onSave: (game: Omit<Game, "id" | "createdAt" | "updatedAt">) => void;
+  game?: GameDTO | null;
+  onSave: (game: Omit<GameDTO, "id" | "createdAt" | "updatedAt">) => void;
   onCancel: () => void;
   availableSagas?: string[];
 }
@@ -91,8 +92,8 @@ export const GameForm = ({
       whyLiked: formData.whyLiked.trim() || undefined,
       platform: formData.platform.trim() || undefined,
       saga: formData.saga.trim() || undefined,
-      backlog: formData.backlog,           // <<—— NEW
-    } as any);
+      backlog: formData.backlog,
+    });
   };
 
   return (
