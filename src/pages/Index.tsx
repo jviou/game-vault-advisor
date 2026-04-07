@@ -351,9 +351,10 @@ export default function Index() {
           <img
             src="/banner_todo_1600x450.jpg"
             alt="Section À FAIRE"
-            className="w-full h-auto object-cover"
+            className="absolute inset-0 h-full w-full object-cover"
+            style={{ objectPosition: 'center 50%' }}
           />
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="relative flex min-h-[140px] sm:min-h-[160px] lg:min-h-[180px] items-center justify-center">
             <div className="text-center">
               <h2 className="text-3xl sm:text-5xl font-extrabold text-white drop-shadow-md tracking-wider">
                 À FAIRE
